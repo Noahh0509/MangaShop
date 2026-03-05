@@ -2,6 +2,7 @@ import express from 'express';
 import {
     registerUser,
     registerAdmin,
+    getAllUsersPublic,
     getAllUsers,
     getUserById,
     updateUserByAdmin,
@@ -41,6 +42,45 @@ const router = express.Router();
  *         description: Email hoac username da ton tai
  */
 router.post('/register', registerUser);
+
+/**
+ * @swagger
+ * /api/users/public-users:
+ *   get:
+ *     summary: Lay danh sach users (Id + name) - Khong can dang nhap
+ *     tags: [Users - Public]
+ *     responses:
+ *       200:
+ *         description: Thanh cong
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 results:
+ *                   type: integer
+ *                   example: 5
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     users:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           Id:
+ *                             type: string
+ *                             example: "664abc123..."
+ *                           name:
+ *                             type: string
+ *                             example: "Nguyen Van A"
+ *       500:
+ *         description: Loi may chu
+ */
+router.get('/public-users', getAllUsersPublic); 
 
 router.use(protect);
 

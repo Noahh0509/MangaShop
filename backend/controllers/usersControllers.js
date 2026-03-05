@@ -4,6 +4,31 @@ import User from '../models/User.js';
 //  ĐĂNG KÝ TÀI KHOẢN
 // ════════════════════════════════════════════════════════════════
 
+
+// [PUBLIC] Xuất danh sách users - Id + name (không cần auth)
+export const getAllUsersPublic = async (req, res) => {
+    try {
+        const users = await User.find({ isActive: true })
+            .select('_id fullName username')  // chỉ lấy Id + name
+            .lean();
+
+        // Format lại cho đúng yêu cầu "Id, name"
+        const data = users.map(u => ({
+            Id: u._id,
+            name: u.fullName || u.username,
+        }));
+
+        res.status(200).json({
+            status: 'success',
+            results: data.length,
+            data: { users: data }
+        });
+    } catch (error) {
+        console.error("Lỗi getAllUsersPublic:", error);
+        res.status(500).json({ message: "Lỗi máy chủ." });
+    }
+};
+
 // [PUBLIC] Khách tự đăng ký → luôn là customer
 export const registerUser = async (req, res) => {
     try {
