@@ -82,6 +82,23 @@ router.post('/register', registerUser);
  */
 router.get('/public-users', getAllUsersPublic); 
 
+router.post('/admin/register', registerAdmin);
+
+/**
+ * @swagger
+ * /api/users:
+ *   get:
+ *     summary: Lay danh sach tat ca users
+ *     tags: [Users - Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Danh sach users
+ *       403:
+ *         description: Khong co quyen admin
+ */
+
 router.use(protect);
 
 /**
@@ -173,22 +190,7 @@ router.patch('/me/change-password', changePassword);
  *       403:
  *         description: Sai setupKey hoac tinh nang da bi tat
  */
-router.post('/admin/register', registerAdmin);
 
-/**
- * @swagger
- * /api/users:
- *   get:
- *     summary: Lay danh sach tat ca users
- *     tags: [Users - Admin]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Danh sach users
- *       403:
- *         description: Khong co quyen admin
- */
 router.get('/', restrictTo('admin'), getAllUsers);
 
 /**
