@@ -12,7 +12,8 @@ connectDB();
 
 const app = express();
 app.use(cors({
-  origin: "https://manga-shop-fe.vercel.app",
+  origin: process.env.CLIENT_URL,
+    //origin: "https://manga-shop-fe.vercel.app",
   credentials: true
 }));
 
