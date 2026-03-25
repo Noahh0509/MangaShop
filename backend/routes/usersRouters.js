@@ -11,6 +11,7 @@ import {
     getMe,
     updateMe,
     changePassword,
+    createStaff,
 } from '../controllers/usersControllers.js';
 import { protect, restrictTo } from '../middlewares/authMiddleware.js';
 
@@ -213,6 +214,14 @@ router.get('/', restrictTo('admin'), getAllUsers);
  *         description: Khong tim thay user
  */
 router.get('/:id', restrictTo('admin'), getUserById);
+
+
+
+// routes/userRoutes.js — thêm vào phần admin
+router.post('/create-staff', protect, restrictTo('admin'), createStaff);
+
+
+
 
 /**
  * @swagger

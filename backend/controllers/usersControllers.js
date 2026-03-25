@@ -146,6 +146,34 @@ export const getAllUsers = async (req, res) => {
     }
 };
 
+export const createStaff = async (req, res) => {
+    try {
+        const { username, email, password, fullName, phone } = req.body;
+
+        if (!username || !email || !password)
+            return res.status(400).json({ message: "Vui lòng nhập đủ thông tin." });
+
+        const exists = await User.findOne({ $or: [{ email }, { username }] });
+        if (exists) {
+            const field = exists.email === email ? 'Email' : 'Username';
+            return res.status(400).json({ message: `${field} đã được sử dụng.` });
+        }
+
+        const staff = await User.create({
+            username, email, password, fullName, phone,
+            role: 'staff',
+        });
+
+        res.status(201).json({ status: 'success', data: { user: staff } });
+    } catch (error) {
+        if (error.code === 11000) {
+            const field = Object.keys(error.keyValue)[0];
+            return res.status(400).json({ message: `${field} đã được sử dụng.` });
+        }
+        res.status(500).json({ message: "Lỗi máy chủ." });
+    }
+};
+
 export const getUserById = async (req, res) => {
     try {
         const user = await User.findById(req.params.id).select('-__v');
@@ -158,11 +186,18 @@ export const getUserById = async (req, res) => {
 };
 
 export const updateUserByAdmin = async (req, res) => {
-    try {
+     try {
         const { password, refreshToken, ...updateData } = req.body;
+
+        // Chỉ cho phép role hợp lệ
+        if (updateData.role && !Object.values(User.statics?.ROLES || { c:'customer', s:'staff', a:'admin' }).includes(updateData.role)) {
+            return res.status(400).json({ message: "Role không hợp lệ." });
+        }
+
         const user = await User.findByIdAndUpdate(req.params.id, updateData, {
             new: true, runValidators: true
         }).select('-__v');
+
         if (!user) return res.status(404).json({ message: "Không tìm thấy user." });
         res.status(200).json({ status: 'success', data: { user } });
     } catch (error) {
@@ -170,7 +205,6 @@ export const updateUserByAdmin = async (req, res) => {
             const field = Object.keys(error.keyValue)[0];
             return res.status(400).json({ message: `${field} đã tồn tại.` });
         }
-        console.error("Lỗi updateUserByAdmin:", error);
         res.status(500).json({ message: "Lỗi máy chủ khi cập nhật user." });
     }
 };
