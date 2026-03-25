@@ -4,7 +4,8 @@ import jwt from "jsonwebtoken";
 
 const ROLES = {
   CUSTOMER: "customer",
-  ADMIN: "admin",
+  STAFF: "staff", // THEM XOA SUA SAN PHAM 
+  ADMIN: "admin", 
 };
 
 const userSchema = new mongoose.Schema(
