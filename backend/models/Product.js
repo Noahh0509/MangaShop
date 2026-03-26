@@ -1,15 +1,14 @@
-// models/product.model.js
 import mongoose from "mongoose";
 
 // ─── Constants ──────────────────────────────────────────────────
 const STATUS = {
-  ACTIVE:       "active",
-  INACTIVE:     "inactive",
-  OUT_OF_STOCK: "out_of_stock",
-  DISCONTINUED: "discontinued",
+  ACTIVE:        "active",
+  INACTIVE:      "inactive",
+  OUT_OF_STOCK:  "out_of_stock",
+  DISCONTINUED:  "discontinued",
 };
 
-// ─── Sub-schema: ảnh sản phẩm ───────────────────────────────────
+// ─── Sub-schema: Ảnh sản phẩm ───────────────────────────────────
 const imageSchema = new mongoose.Schema(
   {
     url:       { type: String, required: true },
@@ -19,20 +18,7 @@ const imageSchema = new mongoose.Schema(
   { _id: false }
 );
 
-// ─── Sub-schema: biến thể ───────────────────────────────────────
-const variantSchema = new mongoose.Schema(
-  {
-    name:     { type: String, required: true, trim: true },
-    sku:      { type: String, required: true, trim: true, unique: true },
-    price:    { type: Number, required: true, min: 0 },
-    stock:    { type: Number, required: true, min: 0, default: 0 },
-    images:   { type: [imageSchema], default: [] },
-    isActive: { type: Boolean, default: true },
-  },
-  { _id: true }
-);
-
-// ─── Main schema ────────────────────────────────────────────────
+// ─── Main Schema ────────────────────────────────────────────────
 const productSchema = new mongoose.Schema(
   {
     name: {
@@ -44,33 +30,38 @@ const productSchema = new mongoose.Schema(
     description:      { type: String, trim: true, default: null },
     shortDescription: { type: String, trim: true, maxlength: 300, default: null },
 
-    // ─── Danh mục & tags ─────────────────────────────────────────
+    // ─── Danh mục & Tags ─────────────────────────────────────────
     category: {
       type: mongoose.Schema.Types.ObjectId, ref: "Category", required: true,
     },
     tags: { type: [String], default: [] },
 
-    // ─── Giá & tồn kho ───────────────────────────────────────────
+    // ─── Giá & Tồn kho ───────────────────────────────────────────
     basePrice: { type: Number, required: true, min: 0 },
-    salePrice: { type: Number, default: null, min: 0 },
-    stock:     { type: Number, default: 0, min: 0 },
-
-    // ─── Biến thể ────────────────────────────────────────────────
-    hasVariants: { type: Boolean, default: false },
-    variants:    { type: [variantSchema], default: [] },
+    salePrice: { 
+      type: Number, 
+      default: null, 
+      min: 0,
+      validate: {
+        validator: function(value) {
+          // Giá sale phải nhỏ hơn hoặc bằng giá gốc
+          return !value || value <= this.basePrice;
+        },
+        message: "Giá khuyến mãi ({VALUE}) phải nhỏ hơn hoặc bằng giá gốc."
+      }
+    },
+    stock: { type: Number, default: 0, min: 0 },
 
     // ─── Hình ảnh ────────────────────────────────────────────────
     images: { type: [imageSchema], default: [] },
 
-    // ─── Attributes linh hoạt ────────────────────────────────────
+    // ─── Attributes linh hoạt (Màu sắc, chất liệu...) ────────────
     attributes: {
       type: Map, of: mongoose.Schema.Types.Mixed, default: {},
     },
 
-    // ─── Khuyến mãi ──────────────────────────────────────────────
+    // ─── Khuyến mãi & SEO ────────────────────────────────────────
     promotions: [{ type: mongoose.Schema.Types.ObjectId, ref: "Promotion" }],
-
-    // ─── SEO ─────────────────────────────────────────────────────
     seo: {
       metaTitle:       { type: String, default: null },
       metaDescription: { type: String, default: null },
@@ -90,7 +81,12 @@ const productSchema = new mongoose.Schema(
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
   },
-  { timestamps: true }
+  { 
+    timestamps: true,
+    // Cho phép hiển thị các trường Virtual khi biến đổi thành JSON (gửi về Client)
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true }
+  }
 );
 
 // ─── Indexes ─────────────────────────────────────────────────────
@@ -99,20 +95,14 @@ productSchema.index({ category: 1, status: 1 });
 productSchema.index({ slug: 1 });
 productSchema.index({ basePrice: 1 });
 productSchema.index({ soldCount: -1 });
-productSchema.index({ promotions: 1 });
 
 // ─── Virtuals ────────────────────────────────────────────────────
 productSchema.virtual("displayPrice").get(function () {
   return this.salePrice ?? this.basePrice;
 });
 
-productSchema.virtual("totalStock").get(function () {
-  if (!this.hasVariants || this.variants.length === 0) return this.stock;
-  return this.variants.reduce((sum, v) => sum + (v.isActive ? v.stock : 0), 0);
-});
-
 productSchema.virtual("isInStock").get(function () {
-  return this.totalStock > 0;
+  return this.stock > 0;
 });
 
 productSchema.virtual("discountPercent").get(function () {
@@ -120,41 +110,42 @@ productSchema.virtual("discountPercent").get(function () {
   return Math.round(((this.basePrice - this.salePrice) / this.basePrice) * 100);
 });
 
-// ─── Methods ─────────────────────────────────────────────────────
+// ─── Methods (Instance) ──────────────────────────────────────────
 productSchema.methods.isAvailable = function () {
-  return this.status === STATUS.ACTIVE && this.totalStock > 0;
+  return this.status === STATUS.ACTIVE && this.stock > 0;
 };
 
 productSchema.methods.incrementView = async function () {
-  await this.constructor.updateOne({ _id: this._id }, { $inc: { viewCount: 1 } });
+  this.viewCount += 1;
+  return await this.save();
 };
 
 productSchema.methods.updateRating = async function (newRating, isNew = true) {
-  const total = this.averageRating * this.reviewCount + newRating;
-  const count = this.reviewCount + (isNew ? 1 : 0);
-  await this.constructor.updateOne(
-    { _id: this._id },
-    { averageRating: +(total / count).toFixed(1), reviewCount: count }
-  );
+  const totalPoints = this.averageRating * this.reviewCount + newRating;
+  const newCount = this.reviewCount + (isNew ? 1 : 0);
+  
+  // Cập nhật cả RAM và DB
+  this.set({
+    averageRating: +(totalPoints / newCount).toFixed(1),
+    reviewCount: newCount
+  });
+  
+  return await this.save();
 };
 
-// Gắn khuyến mãi vào sản phẩm
 productSchema.methods.addPromotion = async function (promotionId) {
-  await this.constructor.updateOne(
-    { _id: this._id },
-    { $addToSet: { promotions: promotionId } }
-  );
+  if (!this.promotions.includes(promotionId)) {
+    this.promotions.push(promotionId);
+    return await this.save();
+  }
 };
 
-// Gỡ khuyến mãi khỏi sản phẩm
 productSchema.methods.removePromotion = async function (promotionId) {
-  await this.constructor.updateOne(
-    { _id: this._id },
-    { $pull: { promotions: promotionId } }
-  );
+  this.promotions.pull(promotionId);
+  return await this.save();
 };
 
-// ─── Statics ─────────────────────────────────────────────────────
+// ─── Statics (Model) ─────────────────────────────────────────────
 productSchema.statics.STATUS = STATUS;
 
 productSchema.statics.findBySlug = function (slug) {
@@ -173,25 +164,7 @@ productSchema.statics.findFeatured = function (limit = 10) {
   return this.find({ isFeatured: true, status: STATUS.ACTIVE })
     .sort({ soldCount: -1 })
     .limit(limit)
-    .populate("category")
-    .populate("promotions");
-};
-
-productSchema.statics.searchProducts = function (keyword, options = {}) {
-  return this.find(
-    { $text: { $search: keyword }, status: STATUS.ACTIVE, ...options },
-    { score: { $meta: "textScore" } }
-  )
-    .sort({ score: { $meta: "textScore" } })
-    .populate("category")
-    .populate("promotions");
-};
-
-// Tìm sản phẩm đang có khuyến mãi
-productSchema.statics.findWithPromotion = function (promotionId) {
-  return this.find({ promotions: promotionId, status: STATUS.ACTIVE })
-    .populate("category")
-    .populate("promotions");
+    .populate("category");
 };
 
 const Product = mongoose.model("Product", productSchema);
