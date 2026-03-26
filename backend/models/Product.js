@@ -19,18 +19,6 @@ const imageSchema = new mongoose.Schema(
   { _id: false }
 );
 
-// ─── Sub-schema: biến thể ───────────────────────────────────────
-const variantSchema = new mongoose.Schema(
-  {
-    name:     { type: String, required: true, trim: true },
-    sku:      { type: String, required: true, trim: true, unique: true },
-    price:    { type: Number, required: true, min: 0 },
-    stock:    { type: Number, required: true, min: 0, default: 0 },
-    images:   { type: [imageSchema], default: [] },
-    isActive: { type: Boolean, default: true },
-  },
-  { _id: true }
-);
 
 // ─── Main schema ────────────────────────────────────────────────
 const productSchema = new mongoose.Schema(
