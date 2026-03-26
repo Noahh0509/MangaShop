@@ -1,15 +1,14 @@
-// models/product.model.js
 import mongoose from "mongoose";
 
 // ─── Constants ──────────────────────────────────────────────────
 const STATUS = {
-  ACTIVE: "active",
-  INACTIVE: "inactive",
+  ACTIVE:       "active",
+  INACTIVE:     "inactive",
   OUT_OF_STOCK: "out_of_stock",
   DISCONTINUED: "discontinued",
 };
 
-// ─── Sub-schema: ảnh sản phẩm ───────────────────────────────────
+// ─── Sub-schema: Ảnh sản phẩm ───────────────────────────────────
 const imageSchema = new mongoose.Schema(
   {
     url: { type: String, required: true },
@@ -22,20 +21,14 @@ const imageSchema = new mongoose.Schema(
 // ─── Sub-schema: biến thể ───────────────────────────────────────
 const variantSchema = new mongoose.Schema(
   {
-    name: { type: String, required: true, trim: true },
-    sku: {
-      type: String,
-      required: true,
-      trim: true,
-      unique: true,
-      sparse: true,
-    },
-    price: { type: Number, required: true, min: 0 },
-    stock: { type: Number, required: true, min: 0, default: 0 },
-    images: { type: [imageSchema], default: [] },
+    name:     { type: String, required: true, trim: true },
+    sku:      { type: String, required: true, trim: true, unique: true },
+    price:    { type: Number, required: true, min: 0 },
+    stock:    { type: Number, required: true, min: 0, default: 0 },
+    images:   { type: [imageSchema], default: [] },
     isActive: { type: Boolean, default: true },
   },
-  { _id: true },
+  { _id: true }
 );
 
 // ─── Main schema ────────────────────────────────────────────────
@@ -62,7 +55,7 @@ const productSchema = new mongoose.Schema(
       default: null,
     },
 
-    // ─── Danh mục & tags ─────────────────────────────────────────
+    // ─── Danh mục & Tags ─────────────────────────────────────────
     category: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Category",
@@ -70,29 +63,27 @@ const productSchema = new mongoose.Schema(
     },
     tags: { type: [String], default: [] },
 
-    // ─── Giá & tồn kho ───────────────────────────────────────────
+    // ─── Giá & Tồn kho ───────────────────────────────────────────
     basePrice: { type: Number, required: true, min: 0 },
     salePrice: { type: Number, default: null, min: 0 },
-    stock: { type: Number, default: 0, min: 0 },
+    stock:     { type: Number, default: 0, min: 0 },
 
     // ─── Biến thể ────────────────────────────────────────────────
     hasVariants: { type: Boolean, default: false },
-    variants: { type: [variantSchema], default: [] },
+    variants:    { type: [variantSchema], default: [] },
 
     // ─── Hình ảnh ────────────────────────────────────────────────
     images: { type: [imageSchema], default: [] },
 
-    // ─── Attributes linh hoạt ────────────────────────────────────
+    // ─── Attributes linh hoạt (Màu sắc, chất liệu...) ────────────
     attributes: {
       type: Map,
       of: mongoose.Schema.Types.Mixed,
       default: {},
     },
 
-    // ─── Khuyến mãi ──────────────────────────────────────────────
+    // ─── Khuyến mãi & SEO ────────────────────────────────────────
     promotions: [{ type: mongoose.Schema.Types.ObjectId, ref: "Promotion" }],
-
-    // ─── SEO ─────────────────────────────────────────────────────
     seo: {
       metaTitle: { type: String, default: null },
       metaDescription: { type: String, default: null },
@@ -124,7 +115,7 @@ const productSchema = new mongoose.Schema(
       default: null,
     },
   },
-  { timestamps: true },
+  { timestamps: true }
 );
 
 // ─── Indexes ─────────────────────────────────────────────────────
@@ -132,20 +123,14 @@ productSchema.index({ name: "text", description: "text", tags: "text" });
 productSchema.index({ category: 1, status: 1 });
 productSchema.index({ basePrice: 1 });
 productSchema.index({ soldCount: -1 });
-productSchema.index({ promotions: 1 });
 
 // ─── Virtuals ────────────────────────────────────────────────────
 productSchema.virtual("displayPrice").get(function () {
   return this.salePrice ?? this.basePrice;
 });
 
-productSchema.virtual("totalStock").get(function () {
-  if (!this.hasVariants || this.variants.length === 0) return this.stock;
-  return this.variants.reduce((sum, v) => sum + (v.isActive ? v.stock : 0), 0);
-});
-
 productSchema.virtual("isInStock").get(function () {
-  return this.totalStock > 0;
+  return this.stock > 0;
 });
 
 productSchema.virtual("discountPercent").get(function () {
@@ -153,16 +138,13 @@ productSchema.virtual("discountPercent").get(function () {
   return Math.round(((this.basePrice - this.salePrice) / this.basePrice) * 100);
 });
 
-// ─── Methods ─────────────────────────────────────────────────────
+// ─── Methods (Instance) ──────────────────────────────────────────
 productSchema.methods.isAvailable = function () {
-  return this.status === STATUS.ACTIVE && this.totalStock > 0;
+  return this.status === STATUS.ACTIVE && this.stock > 0;
 };
 
 productSchema.methods.incrementView = async function () {
-  await this.constructor.updateOne(
-    { _id: this._id },
-    { $inc: { viewCount: 1 } },
-  );
+  await this.constructor.updateOne({ _id: this._id }, { $inc: { viewCount: 1 } });
 };
 
 productSchema.methods.updateRating = async function (newRating, isNew = true) {
@@ -170,7 +152,7 @@ productSchema.methods.updateRating = async function (newRating, isNew = true) {
   const count = this.reviewCount + (isNew ? 1 : 0);
   await this.constructor.updateOne(
     { _id: this._id },
-    { averageRating: +(total / count).toFixed(1), reviewCount: count },
+    { averageRating: +(total / count).toFixed(1), reviewCount: count }
   );
 };
 
@@ -178,19 +160,18 @@ productSchema.methods.updateRating = async function (newRating, isNew = true) {
 productSchema.methods.addPromotion = async function (promotionId) {
   await this.constructor.updateOne(
     { _id: this._id },
-    { $addToSet: { promotions: promotionId } },
+    { $addToSet: { promotions: promotionId } }
   );
 };
 
-// Gỡ khuyến mãi khỏi sản phẩm
 productSchema.methods.removePromotion = async function (promotionId) {
   await this.constructor.updateOne(
     { _id: this._id },
-    { $pull: { promotions: promotionId } },
+    { $pull: { promotions: promotionId } }
   );
 };
 
-// ─── Statics ─────────────────────────────────────────────────────
+// ─── Statics (Model) ─────────────────────────────────────────────
 productSchema.statics.STATUS = STATUS;
 
 productSchema.statics.findBySlug = function (slug) {
@@ -216,7 +197,7 @@ productSchema.statics.findFeatured = function (limit = 10) {
 productSchema.statics.searchProducts = function (keyword, options = {}) {
   return this.find(
     { $text: { $search: keyword }, status: STATUS.ACTIVE, ...options },
-    { score: { $meta: "textScore" } },
+    { score: { $meta: "textScore" } }
   )
     .sort({ score: { $meta: "textScore" } })
     .populate("category")
