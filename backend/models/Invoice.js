@@ -1,20 +1,21 @@
-const mongoose = require("mongoose");
+import mongoose from "mongoose";
 
 // --- Sub-schema: từng dòng sản phẩm trong hóa đơn ---
 const orderItemSchema = new mongoose.Schema(
   {
-    manga: {
+    product: {
+      // Đã sửa từ manga thành product
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Manga",
+      ref: "Product", // Đã sửa từ Manga thành Product
       required: true,
     },
-    title: { type: String, required: true },   // snapshot tên tại thời điểm mua
-    coverImage: { type: String },              // snapshot ảnh bìa
+    title: { type: String, required: true }, // snapshot tên tại thời điểm mua
+    coverImage: { type: String }, // snapshot ảnh bìa
     quantity: { type: Number, required: true, min: 1 },
     unitPrice: { type: Number, required: true }, // giá gốc 1 cuốn
-    subtotal: { type: Number, required: true },  // quantity * unitPrice
+    subtotal: { type: Number, required: true }, // quantity * unitPrice
   },
-  { _id: false }
+  { _id: false },
 );
 
 // --- Sub-schema: địa chỉ giao hàng ---
@@ -28,7 +29,7 @@ const shippingAddressSchema = new mongoose.Schema(
     street: { type: String, required: true },
     note: { type: String, default: "" },
   },
-  { _id: false }
+  { _id: false },
 );
 
 // --- Sub-schema: thông tin thanh toán ---
@@ -47,7 +48,7 @@ const paymentSchema = new mongoose.Schema(
     transactionId: { type: String, default: null }, // mã giao dịch từ cổng thanh toán
     paidAt: { type: Date, default: null },
   },
-  { _id: false }
+  { _id: false },
 );
 
 // --- Main schema: Hóa đơn ---
@@ -56,7 +57,6 @@ const invoiceSchema = new mongoose.Schema(
     invoiceCode: {
       type: String,
       unique: true,
-      // VD: INV-20240325-000001
     },
     user: {
       type: mongoose.Schema.Types.ObjectId,
@@ -77,9 +77,9 @@ const invoiceSchema = new mongoose.Schema(
     },
 
     // --- Giá tiền ---
-    subtotal: { type: Number, required: true },    // tổng trước giảm giá
+    subtotal: { type: Number, required: true }, // tổng trước giảm giá
     shippingFee: { type: Number, default: 0 },
-    discount: { type: Number, default: 0 },        // giảm từ coupon / khuyến mãi
+    discount: { type: Number, default: 0 }, // giảm từ coupon / khuyến mãi
     totalAmount: { type: Number, required: true }, // số tiền khách thực trả
 
     couponCode: { type: String, default: null },
@@ -88,22 +88,20 @@ const invoiceSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: [
-        "PENDING",       // Chờ xác nhận
-        "CONFIRMED",     // Đã xác nhận
-        "PREPARING",     // Đang đóng gói
-        "SHIPPING",      // Đang giao hàng
-        "DELIVERED",     // Giao thành công
-        "CANCELLED",     // Đã hủy
-        "RETURNED",      // Trả hàng
+        "PENDING", // Chờ xác nhận
+        "CONFIRMED", // Đã xác nhận
+        "PREPARING", // Đang đóng gói
+        "SHIPPING", // Đang giao hàng
+        "DELIVERED", // Giao thành công
+        "CANCELLED", // Đã hủy
+        "RETURNED", // Trả hàng
       ],
       default: "PENDING",
     },
 
-    // Ghi chú hủy / trả hàng
     cancelReason: { type: String, default: null },
     cancelledAt: { type: Date, default: null },
 
-    // Lịch sử thay đổi trạng thái
     statusHistory: [
       {
         status: { type: String },
@@ -113,8 +111,8 @@ const invoiceSchema = new mongoose.Schema(
     ],
   },
   {
-    timestamps: true, // createdAt = ngày đặt hàng, updatedAt = lần cập nhật cuối
-  }
+    timestamps: true,
+  },
 );
 
 // --- Tự sinh invoiceCode trước khi save ---
@@ -122,7 +120,6 @@ invoiceSchema.pre("save", async function (next) {
   if (!this.invoiceCode) {
     const date = new Date();
     const dateStr = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}`;
-    // Đếm số hóa đơn trong ngày hôm nay
     const count = await mongoose.model("Invoice").countDocuments({
       createdAt: {
         $gte: new Date(date.setHours(0, 0, 0, 0)),
@@ -131,7 +128,6 @@ invoiceSchema.pre("save", async function (next) {
     });
     this.invoiceCode = `INV-${dateStr}-${String(count + 1).padStart(6, "0")}`;
   }
-  next();
 });
 
 // --- Method: cập nhật trạng thái đơn hàng ---
@@ -145,7 +141,7 @@ invoiceSchema.methods.updateStatus = function (newStatus, note = "") {
   return this.save();
 };
 
-// --- Static: lấy doanh thu theo khoảng thời gian ---
+// --- Static: lấy doanh thu ---
 invoiceSchema.statics.getRevenue = function (from, to) {
   return this.aggregate([
     {
@@ -167,7 +163,6 @@ invoiceSchema.statics.getRevenue = function (from, to) {
 // --- Index ---
 invoiceSchema.index({ user: 1, createdAt: -1 });
 invoiceSchema.index({ status: 1 });
-invoiceSchema.index({ invoiceCode: 1 });
 
 const Invoice = mongoose.model("Invoice", invoiceSchema);
-module.exports = Invoice;
+export default Invoice; // Đã sửa sang export default chuẩn ES Module

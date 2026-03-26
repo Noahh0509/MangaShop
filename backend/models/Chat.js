@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+import mongoose from "mongoose";
 
 // --- Sub-schema: từng tin nhắn ---
 const messageSchema = new mongoose.Schema(
@@ -31,7 +31,7 @@ const messageSchema = new mongoose.Schema(
       default: Date.now,
     },
   },
-  { _id: true }
+  { _id: true },
 );
 
 // --- Main schema: phiên chat ---
@@ -61,11 +61,11 @@ const chatSessionSchema = new mongoose.Schema(
     topic: {
       type: String,
       enum: [
-        "ORDER_INQUIRY",    // Hỏi về đơn hàng
-        "PRODUCT_INQUIRY",  // Hỏi về truyện
-        "RETURN_REFUND",    // Đổi trả, hoàn tiền
-        "TECHNICAL",        // Lỗi kỹ thuật
-        "GENERAL",          // Thắc mắc chung
+        "ORDER_INQUIRY", // Hỏi về đơn hàng
+        "PRODUCT_INQUIRY", // Hỏi về truyện
+        "RETURN_REFUND", // Đổi trả, hoàn tiền
+        "TECHNICAL", // Lỗi kỹ thuật
+        "GENERAL", // Thắc mắc chung
         "OTHER",
       ],
       default: "GENERAL",
@@ -76,10 +76,10 @@ const chatSessionSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: [
-        "ACTIVE",    // Đang diễn ra
-        "RESOLVED",  // Đã giải quyết
-        "CLOSED",    // Đóng (user tự đóng hoặc timeout)
-        "PENDING",   // Chờ staff xử lý
+        "ACTIVE", // Đang diễn ra
+        "RESOLVED", // Đã giải quyết
+        "CLOSED", // Đóng (user tự đóng hoặc timeout)
+        "PENDING", // Chờ staff xử lý
       ],
       default: "ACTIVE",
     },
@@ -98,7 +98,7 @@ const chatSessionSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 // --- Cập nhật lastMessageAt mỗi khi có tin nhắn mới ---
@@ -106,11 +106,14 @@ chatSessionSchema.pre("save", function (next) {
   if (this.isModified("messages") && this.messages.length > 0) {
     this.lastMessageAt = this.messages[this.messages.length - 1].sentAt;
   }
-  next();
 });
 
 // --- Method: thêm tin nhắn mới ---
-chatSessionSchema.methods.addMessage = function (role, content, attachments = []) {
+chatSessionSchema.methods.addMessage = function (
+  role,
+  content,
+  attachments = [],
+) {
   this.messages.push({ role, content, attachments });
   return this.save();
 };
@@ -157,4 +160,4 @@ chatSessionSchema.index({ status: 1, sessionType: 1 });
 chatSessionSchema.index({ assignedStaff: 1, status: 1 });
 
 const ChatSession = mongoose.model("ChatSession", chatSessionSchema);
-module.exports = ChatSession;
+export default ChatSession;

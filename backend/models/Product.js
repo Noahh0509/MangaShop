@@ -3,8 +3,8 @@ import mongoose from "mongoose";
 
 // ─── Constants ──────────────────────────────────────────────────
 const STATUS = {
-  ACTIVE:       "active",
-  INACTIVE:     "inactive",
+  ACTIVE: "active",
+  INACTIVE: "inactive",
   OUT_OF_STOCK: "out_of_stock",
   DISCONTINUED: "discontinued",
 };
@@ -12,59 +12,81 @@ const STATUS = {
 // ─── Sub-schema: ảnh sản phẩm ───────────────────────────────────
 const imageSchema = new mongoose.Schema(
   {
-    url:       { type: String, required: true },
-    altText:   { type: String, default: null },
+    url: { type: String, required: true },
+    altText: { type: String, default: null },
     isPrimary: { type: Boolean, default: false },
   },
-  { _id: false }
+  { _id: false },
 );
 
 // ─── Sub-schema: biến thể ───────────────────────────────────────
 const variantSchema = new mongoose.Schema(
   {
-    name:     { type: String, required: true, trim: true },
-    sku:      { type: String, required: true, trim: true, unique: true },
-    price:    { type: Number, required: true, min: 0 },
-    stock:    { type: Number, required: true, min: 0, default: 0 },
-    images:   { type: [imageSchema], default: [] },
+    name: { type: String, required: true, trim: true },
+    sku: {
+      type: String,
+      required: true,
+      trim: true,
+      unique: true,
+      sparse: true,
+    },
+    price: { type: Number, required: true, min: 0 },
+    stock: { type: Number, required: true, min: 0, default: 0 },
+    images: { type: [imageSchema], default: [] },
     isActive: { type: Boolean, default: true },
   },
-  { _id: true }
+  { _id: true },
 );
 
 // ─── Main schema ────────────────────────────────────────────────
 const productSchema = new mongoose.Schema(
   {
     name: {
-      type: String, required: true, trim: true, maxlength: 200,
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 200,
     },
     slug: {
-      type: String, required: true, unique: true, lowercase: true, trim: true,
+      type: String,
+      required: true,
+      unique: true,
+      lowercase: true,
+      trim: true,
     },
-    description:      { type: String, trim: true, default: null },
-    shortDescription: { type: String, trim: true, maxlength: 300, default: null },
+    description: { type: String, trim: true, default: null },
+    shortDescription: {
+      type: String,
+      trim: true,
+      maxlength: 300,
+      default: null,
+    },
 
     // ─── Danh mục & tags ─────────────────────────────────────────
     category: {
-      type: mongoose.Schema.Types.ObjectId, ref: "Category", required: true,
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Category",
+      required: true,
     },
     tags: { type: [String], default: [] },
 
     // ─── Giá & tồn kho ───────────────────────────────────────────
     basePrice: { type: Number, required: true, min: 0 },
     salePrice: { type: Number, default: null, min: 0 },
-    stock:     { type: Number, default: 0, min: 0 },
+    stock: { type: Number, default: 0, min: 0 },
 
     // ─── Biến thể ────────────────────────────────────────────────
     hasVariants: { type: Boolean, default: false },
-    variants:    { type: [variantSchema], default: [] },
+    variants: { type: [variantSchema], default: [] },
 
     // ─── Hình ảnh ────────────────────────────────────────────────
     images: { type: [imageSchema], default: [] },
 
     // ─── Attributes linh hoạt ────────────────────────────────────
     attributes: {
-      type: Map, of: mongoose.Schema.Types.Mixed, default: {},
+      type: Map,
+      of: mongoose.Schema.Types.Mixed,
+      default: {},
     },
 
     // ─── Khuyến mãi ──────────────────────────────────────────────
@@ -72,31 +94,42 @@ const productSchema = new mongoose.Schema(
 
     // ─── SEO ─────────────────────────────────────────────────────
     seo: {
-      metaTitle:       { type: String, default: null },
+      metaTitle: { type: String, default: null },
       metaDescription: { type: String, default: null },
     },
 
     // ─── Trạng thái ──────────────────────────────────────────────
-    status:     { type: String, enum: Object.values(STATUS), default: STATUS.ACTIVE },
+    status: {
+      type: String,
+      enum: Object.values(STATUS),
+      default: STATUS.ACTIVE,
+    },
     isFeatured: { type: Boolean, default: false },
 
     // ─── Thống kê ────────────────────────────────────────────────
-    soldCount:     { type: Number, default: 0 },
-    viewCount:     { type: Number, default: 0 },
+    soldCount: { type: Number, default: 0 },
+    viewCount: { type: Number, default: 0 },
     averageRating: { type: Number, default: 0, min: 0, max: 5 },
-    reviewCount:   { type: Number, default: 0 },
+    reviewCount: { type: Number, default: 0 },
 
     // ─── Audit ───────────────────────────────────────────────────
-    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
-    updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    updatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // ─── Indexes ─────────────────────────────────────────────────────
 productSchema.index({ name: "text", description: "text", tags: "text" });
 productSchema.index({ category: 1, status: 1 });
-productSchema.index({ slug: 1 });
 productSchema.index({ basePrice: 1 });
 productSchema.index({ soldCount: -1 });
 productSchema.index({ promotions: 1 });
@@ -126,7 +159,10 @@ productSchema.methods.isAvailable = function () {
 };
 
 productSchema.methods.incrementView = async function () {
-  await this.constructor.updateOne({ _id: this._id }, { $inc: { viewCount: 1 } });
+  await this.constructor.updateOne(
+    { _id: this._id },
+    { $inc: { viewCount: 1 } },
+  );
 };
 
 productSchema.methods.updateRating = async function (newRating, isNew = true) {
@@ -134,7 +170,7 @@ productSchema.methods.updateRating = async function (newRating, isNew = true) {
   const count = this.reviewCount + (isNew ? 1 : 0);
   await this.constructor.updateOne(
     { _id: this._id },
-    { averageRating: +(total / count).toFixed(1), reviewCount: count }
+    { averageRating: +(total / count).toFixed(1), reviewCount: count },
   );
 };
 
@@ -142,7 +178,7 @@ productSchema.methods.updateRating = async function (newRating, isNew = true) {
 productSchema.methods.addPromotion = async function (promotionId) {
   await this.constructor.updateOne(
     { _id: this._id },
-    { $addToSet: { promotions: promotionId } }
+    { $addToSet: { promotions: promotionId } },
   );
 };
 
@@ -150,7 +186,7 @@ productSchema.methods.addPromotion = async function (promotionId) {
 productSchema.methods.removePromotion = async function (promotionId) {
   await this.constructor.updateOne(
     { _id: this._id },
-    { $pull: { promotions: promotionId } }
+    { $pull: { promotions: promotionId } },
   );
 };
 
@@ -180,7 +216,7 @@ productSchema.statics.findFeatured = function (limit = 10) {
 productSchema.statics.searchProducts = function (keyword, options = {}) {
   return this.find(
     { $text: { $search: keyword }, status: STATUS.ACTIVE, ...options },
-    { score: { $meta: "textScore" } }
+    { score: { $meta: "textScore" } },
   )
     .sort({ score: { $meta: "textScore" } })
     .populate("category")
