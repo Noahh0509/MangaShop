@@ -1,13 +1,28 @@
 import express from "express";
-import PromotionController from "../controllers/promotionControllers.js";
+import { protect, restrictTo } from '../middlewares/authMiddleware.js';
+import promotionController from "../controllers/promotionController.js";
 
 const router = express.Router();
 
-// Lấy các chương trình Flash Sale đang Active để hiện Banner ở Home
-router.get("/flash-sales", PromotionController.getActiveFlashSales);
+// ─── PHẦN CHO KHÁCH (PUBLIC/USER) ──────────────────────────
 
-// Kiểm tra mã Code người dùng nhập ở trang Checkout
-// POST /api/promotions/validate-code { "code": "GIAM20", "orderValue": 500000 }
-router.post("/validate-code", PromotionController.validatePromoCode);
+// 1. Lấy Flash Sale hiện trang chủ (Để trên cùng cho chắc)
+router.get("/flash-sales", promotionController.getActiveFlashSales);
+
+// 2. Kiểm tra mã Code lúc Checkout (Dùng 1 cái duy nhất cho gọn)
+router.post("/validate-code", promotionController.validatePromoCode);
+
+
+// ─── PHẦN CHO ADMIN (QUẢN TRỊ) ─────────────────────────────
+// Sếp có thể thêm protect và restrictTo('admin') ở đây nếu cần bảo mật
+
+// 3. Lấy tất cả KM cho bảng FE sếp vừa làm
+router.get("/admin-all", promotionController.getAllPromotions);
+
+// 4. Tạo mã mới
+router.post("/", promotionController.createPromotion);
+
+// 5. Gạt công tắc Bật/Tắt
+router.patch("/:id/toggle", promotionController.toggleStatus);
 
 export default router;
