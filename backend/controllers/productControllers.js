@@ -1,7 +1,8 @@
 import Product from "../models/Product.js";
 import Promotion from "../models/Promotion.js";
 import Category from "../models/Category.js";
-import slugify from "slugify"; 
+import slugify from "slugify";
+import cloudinary from "../config/cloudinary.js";
 
 const ProductController = {
   // 1. Lấy danh sách thể loại cho Modal Admin
@@ -17,23 +18,19 @@ const ProductController = {
   // 2. Lấy list sản phẩm cho Admin (có search & phân trang)
   getAdminProducts: async (req, res) => {
     try {
-      // 1. Lấy số trang từ Query, mặc định là trang 1
-      // Ví dụ khách gọi: /api/products/admin-all?page=2
       const page = parseInt(req.query.page) || 1;
-      const limit = 5; // ✅ Sếp muốn 5 cuốn mỗi trang
-      const skip = (page - 1) * limit; // Tính toán số lượng bỏ qua
+      const limit = 5;
+      const skip = (page - 1) * limit;
 
       const search = req.query.search || '';
       const query = search ? { name: { $regex: search, $options: 'i' } } : {};
 
-      // 2. Lấy dữ liệu đã phân trang
       const products = await Product.find(query)
         .populate("category", "name")
-        .sort("-createdAt") // Hàng mới về lên đầu
-        .skip(skip)         // Bỏ qua các cuốn của trang trước
-        .limit(limit);      // Chỉ lấy đúng 5 cuốn
+        .sort("-createdAt")
+        .skip(skip)
+        .limit(limit);
 
-      // 3. Đếm tổng số để FE biết đường làm nút "Trang sau/Trang trước"
       const totalProducts = await Product.countDocuments(query);
       const totalPages = Math.ceil(totalProducts / limit);
 
@@ -52,36 +49,85 @@ const ProductController = {
       res.status(500).json({ success: false, message: error.message });
     }
   },
+
   // 1. Tạo sản phẩm mới (Admin)
   createProduct: async (req, res) => {
     try {
       const { name, basePrice, stock, category, description, images } = req.body;
 
+      // 1. Validation cơ bản (Giữ nguyên của sếp)
       if (!name || !basePrice || !category) {
-        return res.status(400).json({ message: "Thiếu Tên, Giá hoặc Thể loại sếp ơi!" });
+        return res.status(400).json({ message: "Thiếu Tên, Giá hoặc Thể loại !" });
       }
+      if (Number(basePrice) <= 0) return res.status(400).json({ message: "Giá sản phẩm phải lớn hơn 0 !" });
+      if (Number(stock) < 0) return res.status(400).json({ message: "Số lượng không được là số âm." });
 
       const existingProduct = await Product.findOne({
         name: { $regex: new RegExp(`^${name}$`, 'i') }
       });
-
       if (existingProduct) {
         return res.status(400).json({
           success: false,
-          message: `Bộ truyện "${name}" đã có trong kho rồi sếp ơi! Sếp check lại thử xem.`
+          message: `Bộ truyện "${name}" đã có trong kho rồi!`
         });
       }
-      // Tạo slug tự động
-      const slug = slugify(name, { lower: true, locale: 'vi', strict: true }) + '-' + Date.now();
 
+      // 2. Tạo Slug
+      const baseSlug = slugify(name, { lower: true, locale: 'vi', strict: true });
+      const finalSlug = baseSlug + '-' + Date.now();
+
+      // 🕵️‍♂️ 3. XỬ LÝ UPLOAD ẢNH & CHỐNG TRÙNG
+      // Nếu sếp gửi mảng ảnh (dạng base64 hoặc file) từ FE lên
+      let finalImages = [];
+      if (images && images.length > 0) {
+        const uploadPromises = images.map(async (img, index) => {
+          // 1. Kiểm tra nếu img đã là Object có url (đã up rồi) thì trả về luôn
+          // Dành cho trường hợp sếp lấy data cũ từ DB rồi gửi ngược lên
+          if (typeof img === 'object' && img.url && img.url.startsWith('http')) {
+            return img;
+          }
+
+          // 2. Nếu img là chuỗi URL cũ (chống lỗi format từ FE)
+          if (typeof img === 'string' && img.startsWith('http')) {
+            return { url: img };
+          }
+
+          // 🚀 3. CHỈ UPLOAD KHI LÀ FILE MỚI (Base64 hoặc Buffer)
+          try {
+            // Đặt tên theo kiểu: naruto-tap-2-0, naruto-tap-2-1...
+            const imagePublicId = `${baseSlug}-${index}`;
+
+            const uploadRes = await cloudinary.uploader.upload(img, {
+              folder: 'MangaShop/Products',
+              public_id: imagePublicId,
+              overwrite: true,  // Trùng tên là đè luôn, cực sạch kho!
+              invalidate: true, // Xóa cache để khách thấy ảnh mới ngay lập tức
+              resource_type: "auto" // Tự nhận diện png, jpg, webp...
+            });
+
+            return {
+              url: uploadRes.secure_url,
+              public_id: uploadRes.public_id
+            };
+          } catch (error) {
+            console.error(`Lỗi upload tấm ảnh thứ ${index}:`, error);
+            return null; // Hoặc ném lỗi tùy sếp
+          }
+        });
+
+        // Lọc bỏ những tấm bị lỗi (null) để DB không bị rác
+        finalImages = (await Promise.all(uploadPromises)).filter(img => img !== null);
+      }
+
+      // 4. Lưu vào DB
       const newProduct = new Product({
         name,
-        slug,
+        slug: finalSlug,
         basePrice: Number(basePrice),
         stock: Number(stock) || 0,
         category,
         description,
-        images,
+        images: finalImages, // Lưu mảng Object có cả URL và Public_ID
         status: Number(stock) > 0 ? "active" : "out_of_stock"
       });
 
@@ -92,13 +138,28 @@ const ProductController = {
       res.status(500).json({ message: "Lỗi Server rồi!" });
     }
   },
+
   // 2. Cập nhật sản phẩm (Admin)
   updateProduct: async (req, res) => {
     try {
       const { id } = req.params;
       const updateData = req.body;
 
-      // Tìm và cập nhật theo ID
+      if (updateData.basePrice !== undefined && Number(updateData.basePrice) <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Giá truyện phải lớn hơn 0."
+        });
+      }
+
+      // Check số lượng kho
+      if (updateData.stock !== undefined && Number(updateData.stock) < 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Số lượng tồn kho không được là số âm!"
+        });
+      }
+
       const updatedProduct = await Product.findByIdAndUpdate(
         id,
         updateData,
@@ -106,7 +167,7 @@ const ProductController = {
       );
 
       if (!updatedProduct) {
-        return res.status(404).json({ success: false, message: "Không tìm thấy truyện này sếp ơi!" });
+        return res.status(404).json({ success: false, message: "Không tìm thấy truyện này " });
       }
 
       res.json({
@@ -116,43 +177,64 @@ const ProductController = {
       });
     } catch (error) {
       console.error("Lỗi Update Product:", error);
-      res.status(500).json({ success: false, message: "Lỗi Server rồi sếp!" });
+      res.status(500).json({ success: false, message: "Lỗi Server rồi!" });
     }
   },
+
   // 3. Xóa sản phẩm (Admin)
   deleteProduct: async (req, res) => {
     try {
       const { id } = req.params;
-      const deletedProduct = await Product.findByIdAndDelete(id);
+      const product = await Product.findById(id);
 
-      if (!deletedProduct) {
-        return res.status(404).json({ success: false, message: "Không tìm thấy truyện để xóa!" });
+      if (!product) {
+        return res.status(404).json({ message: "Không thấy truyện!" });
       }
 
-      res.json({
-        success: true,
-        message: `Đã tiêu hủy cuốn "${deletedProduct.name}" khỏi kho!`
-      });
+      // 🚀 BƯỚC 1: Xóa ảnh trên Cloudinary trước khi xóa DB
+      // Giả sử sếp lưu images là một mảng các URL
+      if (product.images && product.images.length > 0) {
+        const deletePromises = product.images.map(imgObj => {
+          // 🕵️‍♂️ LẤY URL TỪ OBJECT:
+          const url = imgObj.url;
+
+          if (!url) return Promise.resolve();
+
+          // Tách Public ID từ URL Cloudinary
+          // URL của sếp có folder /products/... nên mình lấy từ sau chữ /upload/
+          const parts = url.split('/');
+          const uploadIndex = parts.indexOf('upload');
+
+          // Lấy phần sau /v12345678/ (thường là index + 2)
+          // Sau đó bỏ cái đuôi .jpg/.png đi bằng cách split('.')
+          const publicIdWithExtension = parts.slice(uploadIndex + 2).join('/');
+          const publicId = publicIdWithExtension.split('.')[0];
+
+          console.log("Đang xóa ảnh có Public ID:", publicId);
+          return cloudinary.uploader.destroy(publicId);
+        });
+
+        await Promise.all(deletePromises);
+      }
+
+      // 🚀 BƯỚC 2: Xóa trong DB
+      await Product.findByIdAndDelete(id);
+
+      res.json({ success: true, message: "Đã xóa sạch cả truyện lẫn ảnh!" });
     } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
+      res.status(500).json({ message: error.message });
     }
   },
+
   // 3. API cho khách xem (Có tính toán khuyến mãi phức tạp)
   getAllProducts: async (req, res) => {
     try {
-<<<<<<< HEAD
-      const { category, tag, sort, page = 1, limit = 10 } = req.query;
-      const query = { status: "active" }; // Sửa lại 'active' cho chắc ăn
-=======
-      // ĐÃ SỬA CHỖ NÀY 1: Thêm keyword vào destructuring
       const { category, tag, sort, keyword, page = 1, limit = 10 } = req.query;
       const query = { status: Product.STATUS.ACTIVE };
->>>>>>> 1b50f00367a47fef9f448eb08487435dac7479c6
 
       if (category) query.category = category;
       if (tag) query.tags = tag;
 
-      // ĐÃ SỬA CHỖ NÀY 2: Bắt biến keyword để tìm kiếm theo tên truyện bằng Regex (không phân biệt chữ hoa thường)
       if (keyword) {
         query.name = { $regex: keyword, $options: "i" };
       }
@@ -171,7 +253,7 @@ const ProductController = {
           );
 
           const bestPromo = promo[0] || null;
-          let finalPrice = product.basePrice; // Dùng basePrice làm gốc
+          let finalPrice = product.basePrice;
           let promoInfo = null;
 
           if (bestPromo) {
@@ -216,8 +298,6 @@ const ProductController = {
       res.status(500).json({ message: error.message });
     }
   },
-
-
 };
 
 export default ProductController;

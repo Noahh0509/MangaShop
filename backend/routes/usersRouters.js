@@ -81,7 +81,7 @@ router.post('/register', registerUser);
  *       500:
  *         description: Loi may chu
  */
-router.get('/public-users', getAllUsersPublic); 
+router.get('/public-users', getAllUsersPublic);
 
 router.post('/admin/register', registerAdmin);
 
@@ -192,7 +192,7 @@ router.patch('/me/change-password', changePassword);
  *         description: Sai setupKey hoac tinh nang da bi tat
  */
 
-router.get('/', restrictTo('admin'), getAllUsers);
+router.get('/', restrictTo('admin', 'super_admin'), getAllUsers);
 
 /**
  * @swagger
@@ -220,7 +220,14 @@ router.get('/:id', restrictTo('admin'), getUserById);
 // routes/userRoutes.js — thêm vào phần admin
 router.post('/create-staff', protect, restrictTo('admin'), createStaff);
 
+router.patch('/:id', restrictTo('admin', 'super_admin'), updateUserByAdmin);
 
+// 5. Khóa / Mở khóa tài khoản
+router.patch('/:id/toggle-active', restrictTo('admin', 'super_admin'), toggleActiveUser);
+
+// 6. Xóa user (Trảm) 
+// Sếp có thể để chỉ 'super_admin' mới được xóa nếu muốn an toàn tuyệt đối
+router.delete('/:id', restrictTo('super_admin'), deleteUser);
 
 
 /**
@@ -240,7 +247,7 @@ router.post('/create-staff', protect, restrictTo('admin'), createStaff);
  *       200:
  *         description: Cap nhat thanh cong
  */
-router.patch('/:id', restrictTo('admin'), updateUserByAdmin);
+router.patch('/:id', restrictTo('admin', 'super_admin'), updateUserByAdmin);
 
 /**
  * @swagger
@@ -259,7 +266,7 @@ router.patch('/:id', restrictTo('admin'), updateUserByAdmin);
  *       200:
  *         description: Thay doi trang thai thanh cong
  */
-router.patch('/:id/toggle-active', restrictTo('admin'), toggleActiveUser);
+router.patch('/:id/toggle-active', restrictTo('admin', 'super_admin'), toggleActiveUser);
 
 /**
  * @swagger
@@ -280,6 +287,6 @@ router.patch('/:id/toggle-active', restrictTo('admin'), toggleActiveUser);
  *       404:
  *         description: Khong tim thay user
  */
-router.delete('/:id', restrictTo('admin'), deleteUser);
+router.delete('/:id', restrictTo('admin', 'super_admin'), deleteUser);
 
 export default router;
