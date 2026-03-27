@@ -4,7 +4,7 @@ import jwt from "jsonwebtoken";
 
 const ROLES = {
   CUSTOMER: "customer",
-  STAFF: "staff", // THEM XOA SUA SAN PHAM 
+  SUPER_ADMIN: "super_admin", 
   ADMIN: "admin", 
 };
 

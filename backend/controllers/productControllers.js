@@ -1,43 +1,149 @@
 import Product from "../models/Product.js";
 import Promotion from "../models/Promotion.js";
 import Category from "../models/Category.js";
+import slugify from "slugify"; // ✅ PHẢI CÓ DÒNG NÀY NHA TUAN!
 
 const ProductController = {
 
-  // Thêm vào trong ProductController
+
+  // 1. Lấy danh sách thể loại cho Modal Admin
+  getCategories: async (req, res) => {
+    try {
+      const categories = await Category.find().sort({ name: 1 });
+      res.status(200).json(categories);
+    } catch (error) {
+      res.status(500).json({ message: "Lỗi lấy danh sách thể loại" });
+    }
+  },
+
+  // 2. Lấy list sản phẩm cho Admin (có search & phân trang)
   getAdminProducts: async (req, res) => {
     try {
-      // Admin thì lấy TẤT CẢ, không quan trọng status là gì
-      const { page = 1, limit = 50, search = '' } = req.query;
+      // 1. Lấy số trang từ Query, mặc định là trang 1
+      // Ví dụ khách gọi: /api/products/admin-all?page=2
+      const page = parseInt(req.query.page) || 1;
+      const limit = 5; // ✅ Sếp muốn 5 cuốn mỗi trang
+      const skip = (page - 1) * limit; // Tính toán số lượng bỏ qua
 
-      // Thêm chức năng tìm kiếm theo tên nếu có
-      const query = search
-        ? { name: { $regex: search, $options: 'i' } }
-        : {};
+      const search = req.query.search || '';
+      const query = search ? { name: { $regex: search, $options: 'i' } } : {};
 
+      // 2. Lấy dữ liệu đã phân trang
       const products = await Product.find(query)
         .populate("category", "name")
-        .sort("-createdAt") // Luôn hiện hàng mới nhập lên đầu
-        .limit(limit * 1)
-        .skip((page - 1) * limit);
+        .sort("-createdAt") // Hàng mới về lên đầu
+        .skip(skip)         // Bỏ qua các cuốn của trang trước
+        .limit(limit);      // Chỉ lấy đúng 5 cuốn
 
-      const total = await Product.countDocuments(query);
+      // 3. Đếm tổng số để FE biết đường làm nút "Trang sau/Trang trước"
+      const totalProducts = await Product.countDocuments(query);
+      const totalPages = Math.ceil(totalProducts / limit);
 
       res.json({
         success: true,
-        total,
-        count: products.length,
-        data: products, // Admin có thể không cần tính toán Promotion phức tạp như Client để load cho nhanh
+        data: products,
+        pagination: {
+          currentPage: page,
+          totalPages: totalPages,
+          totalItems: totalProducts,
+          limit: limit
+        }
       });
+
     } catch (error) {
-      res.status(500).json({ message: error.message });
+      res.status(500).json({ success: false, message: error.message });
     }
   },
-  // 1. Lấy danh sách sản phẩm (có kèm lọc, phân trang và tính giá KM)
+  // 1. Tạo sản phẩm mới (Admin)
+  createProduct: async (req, res) => {
+    try {
+      const { name, basePrice, stock, category, description, images } = req.body;
+
+      if (!name || !basePrice || !category) {
+        return res.status(400).json({ message: "Thiếu Tên, Giá hoặc Thể loại sếp ơi!" });
+      }
+
+      const existingProduct = await Product.findOne({
+        name: { $regex: new RegExp(`^${name}$`, 'i') }
+      });
+
+      if (existingProduct) {
+        return res.status(400).json({
+          success: false,
+          message: `Bộ truyện "${name}" đã có trong kho rồi sếp ơi! Sếp check lại thử xem.`
+        });
+      }
+      // Tạo slug tự động
+      const slug = slugify(name, { lower: true, locale: 'vi', strict: true }) + '-' + Date.now();
+
+      const newProduct = new Product({
+        name,
+        slug,
+        basePrice: Number(basePrice),
+        stock: Number(stock) || 0,
+        category,
+        description,
+        images,
+        status: Number(stock) > 0 ? "active" : "out_of_stock"
+      });
+
+      await newProduct.save();
+      res.status(201).json({ success: true, message: "Đã nhập kho bộ " + name, data: newProduct });
+    } catch (error) {
+      console.error("Lỗi Create Product:", error);
+      res.status(500).json({ message: "Lỗi Server rồi!" });
+    }
+  },
+  // 2. Cập nhật sản phẩm (Admin)
+  updateProduct: async (req, res) => {
+    try {
+      const { id } = req.params;
+      const updateData = req.body;
+
+      // Tìm và cập nhật theo ID
+      const updatedProduct = await Product.findByIdAndUpdate(
+        id,
+        updateData,
+        { new: true, runValidators: true }
+      );
+
+      if (!updatedProduct) {
+        return res.status(404).json({ success: false, message: "Không tìm thấy truyện này sếp ơi!" });
+      }
+
+      res.json({
+        success: true,
+        message: "Đã cập nhật bộ " + updatedProduct.name,
+        data: updatedProduct
+      });
+    } catch (error) {
+      console.error("Lỗi Update Product:", error);
+      res.status(500).json({ success: false, message: "Lỗi Server rồi sếp!" });
+    }
+  },
+  // 3. Xóa sản phẩm (Admin)
+  deleteProduct: async (req, res) => {
+    try {
+      const { id } = req.params;
+      const deletedProduct = await Product.findByIdAndDelete(id);
+
+      if (!deletedProduct) {
+        return res.status(404).json({ success: false, message: "Không tìm thấy truyện để xóa!" });
+      }
+
+      res.json({
+        success: true,
+        message: `Đã tiêu hủy cuốn "${deletedProduct.name}" khỏi kho!`
+      });
+    } catch (error) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  },
+  // 3. API cho khách xem (Có tính toán khuyến mãi phức tạp)
   getAllProducts: async (req, res) => {
     try {
       const { category, tag, sort, page = 1, limit = 10 } = req.query;
-      const query = { status: Product.STATUS.ACTIVE };
+      const query = { status: "active" }; // Sửa lại 'active' cho chắc ăn
 
       if (category) query.category = category;
       if (tag) query.tags = tag;
@@ -48,27 +154,19 @@ const ProductController = {
         .limit(limit * 1)
         .skip((page - 1) * limit);
 
-      // Map qua từng sản phẩm để đính kèm logic Promotion
       const enrichedProducts = await Promise.all(
         products.map(async (product) => {
-          // SỬA 1: Đổi tên hàm thành findForProduct (cho khớp với models/Promotion.js)
-          // SỬA 2: Thêm dấu ? vào category?._id để đề phòng trường hợp sản phẩm chưa có danh mục gây lỗi sập app
           const promo = await Promotion.findForProduct(
             product._id,
             product.category?._id,
           );
 
-          // Lấy khuyến mãi có ưu tiên cao nhất (priority)
           const bestPromo = promo[0] || null;
-
-          let finalPrice = product.displayPrice;
+          let finalPrice = product.basePrice; // Dùng basePrice làm gốc
           let promoInfo = null;
 
           if (bestPromo) {
-            // SỬA 3: Hàm calculateDiscount trong Model chỉ nhận 2 tham số: (originalPrice, quantity)
-            // Bạn truyền product._id vào tham số đầu sẽ làm code tính ra NaN (Not a Number). Chỉ cần truyền product.basePrice là đủ.
             const calculation = bestPromo.calculateDiscount(product.basePrice);
-
             finalPrice = calculation.finalPrice;
             promoInfo = {
               name: bestPromo.name,
@@ -95,31 +193,22 @@ const ProductController = {
     }
   },
 
-  // 2. Chi tiết sản phẩm (Dùng slug để tốt cho SEO)
+  // 4. Chi tiết sản phẩm qua Slug
   getProductBySlug: async (req, res) => {
     try {
       const product = await Product.findBySlug(req.params.slug);
-      if (!product)
-        return res.status(404).json({ message: "Không tìm thấy sản phẩm" });
+      if (!product) return res.status(404).json({ message: "Không tìm thấy" });
 
-      // Tăng lượt xem
       await product.incrementView();
+      const promotions = await Promotion.findForProduct(product._id, product.category?._id);
 
-      // SỬA 4: Tương tự ở trên, đổi tên hàm thành findForProduct
-      const promotions = await Promotion.findForProduct(
-        product._id,
-        product.category?._id,
-      );
-
-      res.json({
-        success: true,
-        data: product,
-        activePromotions: promotions,
-      });
+      res.json({ success: true, data: product, activePromotions: promotions });
     } catch (error) {
       res.status(500).json({ message: error.message });
     }
   },
+
+
 };
 
 export default ProductController;
