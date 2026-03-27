@@ -100,16 +100,22 @@ export const updateCartItem = async (req, res) => {
   }
 };
 
+
 // 4. Xóa 1 sản phẩm khỏi giỏ (Delete)
 export const removeFromCart = async (req, res) => {
   try {
     const { productId } = req.params;
-    const cart = await Cart.findOne({ user: req.user._id });
+    let cart = await Cart.findOne({ user: req.user._id });
 
     if (cart) {
       // Tận dụng Method 'removeItem' trong Cart.js
       await cart.removeItem(productId);
+      
+
+      // Lưu ý: Thay đổi 'items.product' hoặc 'products.productId' cho đúng với cấu trúc Schema Cart của bạn nhé!
+      cart = await Cart.findById(cart._id).populate('items.product'); 
     }
+    
     res
       .status(200)
       .json({ success: true, message: "Đã xóa sản phẩm khỏi giỏ", cart });
