@@ -6,11 +6,17 @@ const ProductController = {
   // 1. Lấy danh sách sản phẩm (có kèm lọc, phân trang và tính giá KM)
   getAllProducts: async (req, res) => {
     try {
-      const { category, tag, sort, page = 1, limit = 10 } = req.query;
+      // ĐÃ SỬA CHỖ NÀY 1: Thêm keyword vào destructuring
+      const { category, tag, sort, keyword, page = 1, limit = 10 } = req.query;
       const query = { status: Product.STATUS.ACTIVE };
 
       if (category) query.category = category;
       if (tag) query.tags = tag;
+
+      // ĐÃ SỬA CHỖ NÀY 2: Bắt biến keyword để tìm kiếm theo tên truyện bằng Regex (không phân biệt chữ hoa thường)
+      if (keyword) {
+        query.name = { $regex: keyword, $options: "i" };
+      }
 
       const products = await Product.find(query)
         .populate("category", "name slug")
