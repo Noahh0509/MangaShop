@@ -1,11 +1,9 @@
 import Product from "../models/Product.js";
 import Promotion from "../models/Promotion.js";
 import Category from "../models/Category.js";
-import slugify from "slugify"; // ✅ PHẢI CÓ DÒNG NÀY NHA TUAN!
+import slugify from "slugify"; 
 
 const ProductController = {
-
-
   // 1. Lấy danh sách thể loại cho Modal Admin
   getCategories: async (req, res) => {
     try {

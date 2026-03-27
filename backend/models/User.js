@@ -89,6 +89,14 @@ userSchema.methods.isAdmin = function () {
   return this.role === ROLES.ADMIN;
 };
 
+userSchema.methods.isSuperAdmin = function () {
+  return this.role === ROLES.SUPER_ADMIN;
+};
+
+userSchema.methods.hasManagementAccess = function () {
+  return this.role === ROLES.ADMIN || this.role === ROLES.SUPER_ADMIN;
+};
+
 userSchema.methods.toJSON = function () {
   const obj = this.toObject();
   delete obj.password;
