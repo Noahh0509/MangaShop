@@ -1,7 +1,12 @@
+import axios from "axios";
+import crypto from "crypto";
 import Cart from "../models/Cart.js";
-// Nhớ đổi Invoice.js của bạn sang ES Module (export default Invoice) và đổi 'manga' -> 'product' nhé
 import Invoice from "../models/Invoice.js";
+import Product from "../models/Product.js";
 
+// =========================================================
+// 1. TẠO ĐƠN HÀNG (Xử lý chung cho cả COD và khởi tạo MoMo)
+// =========================================================
 export const createOrder = async (req, res) => {
   try {
     const { shippingAddress, paymentMethod } = req.body;
@@ -13,9 +18,18 @@ export const createOrder = async (req, res) => {
       return res.status(400).json({ message: "Giỏ hàng trống" });
     }
 
-    // 2. Map dữ liệu từ Cart sang cấu trúc Invoice items
+    // 2. Kiểm tra tồn kho
+    for (const item of cart.items) {
+      if (item.product.stock < item.quantity) {
+        return res.status(400).json({
+          message: `Sản phẩm ${item.product.name} chỉ còn ${item.product.stock} cuốn.`,
+        });
+      }
+    }
+
+    // 3. Map dữ liệu sang Hóa đơn
     const orderItems = cart.items.map((item) => ({
-      product: item.product._id, // Nếu bạn giữ chữ 'manga' trong Invoice thì đổi key này thành 'manga'
+      product: item.product._id,
       title: item.product.name,
       coverImage: item.product.images[0]?.url || "",
       quantity: item.quantity,
@@ -23,46 +37,243 @@ export const createOrder = async (req, res) => {
       subtotal: item.price * item.quantity,
     }));
 
-    // 3. Tạo hóa đơn
+    const finalAmount = cart.totalPrice + cart.discount; // Cộng phí ship vào đây nếu cần
+
+    // 4. Luôn tạo Hóa đơn vào DB trước (trạng thái UNPAID hoặc PENDING)
     const newInvoice = new Invoice({
       user: userId,
       items: orderItems,
       shippingAddress,
       payment: {
         method: paymentMethod || "COD",
-        status: "PENDING",
+        status: "PENDING", // Sửa chỗ này: Khởi tạo luôn là PENDING cho mọi hình thức
       },
-      subtotal: cart.totalPrice + cart.discount, // Tổng trước giảm
+      subtotal: cart.totalPrice + cart.discount,
       discount: cart.discount,
-      totalAmount: cart.totalPrice, // Có thể cộng thêm shippingFee nếu cần
-      couponCode: cart.couponCode,
+      totalAmount: finalAmount,
     });
 
     await newInvoice.save();
 
-    // 4. Xóa giỏ hàng sau khi đặt thành công
-    await cart.clearCart();
-
-    // 5. Rẽ nhánh thanh toán (MoMo sẽ xử lý ở đây)
+    // ==========================================
+    // RẼ NHÁNH: NẾU THANH TOÁN MOMO
+    // ==========================================
     if (paymentMethod === "MOMO") {
-      // TODO: Gọi API MoMo tạo link thanh toán và trả về cho client
-      return res.status(200).json({
-        success: true,
-        message: "Chờ thanh toán MoMo (Đang phát triển)",
-        invoice: newInvoice,
-      });
+      const partnerCode = process.env.MOMO_PARTNER_CODE;
+      const accessKey = process.env.MOMO_ACCESS_KEY;
+      const secretKey = process.env.MOMO_SECRET_KEY;
+      const requestId = partnerCode + new Date().getTime();
+
+      // Sử dụng chính invoiceCode làm orderId cho MoMo
+      const orderId = newInvoice.invoiceCode;
+      const orderInfo = `Thanh toán đơn hàng ${orderId} tại MangaShop`;
+
+      const redirectUrl = `${process.env.CLIENT_URL}/payment-result`;
+      const ipnUrl = `${process.env.SERVER_URL}/api/checkout/momo/callback`;
+      const requestType = "captureWallet";
+      const extraData = ""; // Không cần nhồi nhét data vì đã lưu Invoice ở DB
+
+      // Tạo chữ ký
+      const rawSignature = `accessKey=${accessKey}&amount=${finalAmount}&extraData=${extraData}&ipnUrl=${ipnUrl}&orderId=${orderId}&orderInfo=${orderInfo}&partnerCode=${partnerCode}&redirectUrl=${redirectUrl}&requestId=${requestId}&requestType=${requestType}`;
+      const signature = crypto
+        .createHmac("sha256", secretKey)
+        .update(rawSignature)
+        .digest("hex");
+
+      const requestBody = {
+        partnerCode,
+        accessKey,
+        requestId,
+        amount: finalAmount.toString(),
+        orderId,
+        orderInfo,
+        redirectUrl,
+        ipnUrl,
+        partnerName: "MangaShop",
+        storeId: "MangaShopStore",
+        extraData,
+        requestType,
+        signature,
+        lang: "vi",
+      };
+
+      try {
+        const result = await axios.post(
+          "https://test-payment.momo.vn/v2/gateway/api/create",
+          requestBody,
+        );
+        return res.status(200).json({
+          success: true,
+          paymentType: "MOMO",
+          payUrl: result.data.payUrl,
+        });
+      } catch (error) {
+        console.error("Lỗi tạo MoMo:", error?.response?.data || error.message);
+        return res
+          .status(500)
+          .json({ message: "Lỗi kết nối cổng thanh toán MoMo" });
+      }
     }
 
-    res
-      .status(201)
-      .json({
-        success: true,
-        message: "Đặt hàng thành công",
-        invoice: newInvoice,
-      });
+    // ==========================================
+    // RẼ NHÁNH: NẾU THANH TOÁN COD
+    // ==========================================
+    await processSuccessfulOrder(newInvoice.invoiceCode); // Trừ tồn kho & Xóa giỏ
+
+    return res.status(201).json({
+      success: true,
+      message: "Đặt hàng thành công",
+      invoice: newInvoice,
+    });
   } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Lỗi khi tạo đơn hàng", error: error.message });
+    console.error("Lỗi tạo đơn:", error);
+    res.status(500).json({ message: "Lỗi hệ thống khi tạo đơn hàng" });
+  }
+};
+
+// =========================================================
+// 2. CALLBACK MOMO (MoMo gọi ngầm về Server)
+// =========================================================
+export const momoCallback = async (req, res) => {
+  try {
+    const {
+      partnerCode,
+      orderId,
+      requestId,
+      amount,
+      orderInfo,
+      orderType,
+      transId,
+      resultCode,
+      message,
+      payType,
+      responseTime,
+      extraData,
+      signature,
+    } = req.body;
+
+    const accessKey = process.env.MOMO_ACCESS_KEY;
+    const secretKey = process.env.MOMO_SECRET_KEY;
+
+    // Kiểm tra chữ ký bảo mật
+    const rawSignature = `accessKey=${accessKey}&amount=${amount}&extraData=${extraData}&message=${message}&orderId=${orderId}&orderInfo=${orderInfo}&orderType=${orderType}&partnerCode=${partnerCode}&payType=${payType}&requestId=${requestId}&responseTime=${responseTime}&resultCode=${resultCode}&transId=${transId}`;
+    const expectedSignature = crypto
+      .createHmac("sha256", secretKey)
+      .update(rawSignature)
+      .digest("hex");
+
+    if (signature !== expectedSignature) {
+      return res.status(400).json({ message: "Chữ ký không hợp lệ" });
+    }
+
+    // Nếu thanh toán thành công
+    if (resultCode === 0) {
+      await processSuccessfulOrder(orderId, transId);
+    } else {
+      // Nếu hủy hoặc thất bại
+      const invoice = await Invoice.findOne({ invoiceCode: orderId });
+      if (invoice && invoice.payment.status === "PENDING") {
+        invoice.payment.status = "FAILED";
+        invoice.status = "CANCELLED";
+        invoice.cancelReason = message;
+        await invoice.save();
+      }
+    }
+
+    return res.status(204).json({});
+  } catch (error) {
+    console.error("Lỗi Callback MoMo:", error);
+    return res.status(500).json({ message: "Lỗi xử lý IPN" });
+  }
+};
+
+// =========================================================
+// 3. CHECK STATUS (FE gọi để kiểm tra thủ công nếu Webhook lỗi)
+// =========================================================
+export const checkMomoTransactionStatus = async (req, res) => {
+  try {
+    const { orderId } = req.body;
+    if (!orderId)
+      return res.status(400).json({ message: "Thiếu orderId (mã hóa đơn)" });
+
+    const partnerCode = process.env.MOMO_PARTNER_CODE;
+    const accessKey = process.env.MOMO_ACCESS_KEY;
+    const secretKey = process.env.MOMO_SECRET_KEY;
+    const requestId = partnerCode + new Date().getTime();
+
+    const rawSignature = `accessKey=${accessKey}&orderId=${orderId}&partnerCode=${partnerCode}&requestId=${requestId}`;
+    const signature = crypto
+      .createHmac("sha256", secretKey)
+      .update(rawSignature)
+      .digest("hex");
+
+    const requestBody = {
+      partnerCode,
+      accessKey,
+      requestId,
+      orderId,
+      signature,
+      lang: "vi",
+    };
+    const result = await axios.post(
+      "https://test-payment.momo.vn/v2/gateway/api/query",
+      requestBody,
+    );
+
+    const { resultCode, transId } = result.data;
+
+    const invoice = await Invoice.findOne({ invoiceCode: orderId });
+    if (!invoice)
+      return res.status(404).json({ message: "Không tìm thấy hóa đơn" });
+
+    if (resultCode === 0) {
+      await processSuccessfulOrder(orderId, transId);
+      return res.status(200).json({ message: "Đã thanh toán", status: "PAID" });
+    }
+
+    return res.status(400).json({
+      message: "Chưa thanh toán hoặc thất bại",
+      status: invoice.payment.status,
+    });
+  } catch (error) {
+    console.error("Lỗi Check Status:", error?.response?.data || error.message);
+    res.status(500).json({ message: "Lỗi kiểm tra trạng thái giao dịch" });
+  }
+};
+
+// =========================================================
+// HELPER: XỬ LÝ LOGIC KHI ĐƠN HÀNG THÀNH CÔNG (DÙNG CHUNG)
+// =========================================================
+const processSuccessfulOrder = async (invoiceCode, transId = null) => {
+  const invoice = await Invoice.findOne({ invoiceCode });
+
+  // Tránh việc cộng dồn nếu MoMo gọi Callback nhiều lần
+  if (!invoice || invoice.payment.status === "PAID") return invoice;
+
+  try {
+    // 1. Cập nhật hóa đơn
+    invoice.payment.status =
+      invoice.payment.method === "MOMO" ? "PAID" : "PENDING";
+    if (transId) invoice.payment.transactionId = transId;
+    if (invoice.payment.method === "MOMO") invoice.payment.paidAt = new Date();
+    invoice.status = "CONFIRMED";
+    await invoice.save();
+
+    // 2. Trừ tồn kho và Tăng lượt bán
+    const bulkOps = invoice.items.map((item) => ({
+      updateOne: {
+        filter: { _id: item.product },
+        update: { $inc: { stock: -item.quantity, soldCount: item.quantity } },
+      },
+    }));
+    await Product.bulkWrite(bulkOps);
+
+    // 3. Làm trống giỏ hàng của user
+    await Cart.findOneAndDelete({ user: invoice.user });
+
+    return invoice;
+  } catch (error) {
+    console.error("Lỗi processSuccessfulOrder:", error);
+    throw error;
   }
 };
