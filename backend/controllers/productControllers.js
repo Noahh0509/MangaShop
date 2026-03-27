@@ -3,6 +3,36 @@ import Promotion from "../models/Promotion.js";
 import Category from "../models/Category.js";
 
 const ProductController = {
+
+  // Thêm vào trong ProductController
+  getAdminProducts: async (req, res) => {
+    try {
+      // Admin thì lấy TẤT CẢ, không quan trọng status là gì
+      const { page = 1, limit = 50, search = '' } = req.query;
+
+      // Thêm chức năng tìm kiếm theo tên nếu có
+      const query = search
+        ? { name: { $regex: search, $options: 'i' } }
+        : {};
+
+      const products = await Product.find(query)
+        .populate("category", "name")
+        .sort("-createdAt") // Luôn hiện hàng mới nhập lên đầu
+        .limit(limit * 1)
+        .skip((page - 1) * limit);
+
+      const total = await Product.countDocuments(query);
+
+      res.json({
+        success: true,
+        total,
+        count: products.length,
+        data: products, // Admin có thể không cần tính toán Promotion phức tạp như Client để load cho nhanh
+      });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  },
   // 1. Lấy danh sách sản phẩm (có kèm lọc, phân trang và tính giá KM)
   getAllProducts: async (req, res) => {
     try {

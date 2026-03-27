@@ -3,6 +3,9 @@ import ProductController from "../controllers/productControllers.js";
 
 const router = express.Router();
 
+//Lấy list sản phẩm cho thằng admin
+router.get('/admin-all', ProductController.getAdminProducts);
+
 // ─── Public Routes ──────────────────────────────────────────────
 
 // Lấy danh sách sản phẩm (có filter theo category, tags, search)
@@ -15,6 +18,7 @@ router.get("/", ProductController.getAllProducts);
 // Chi tiết sản phẩm qua Slug (Tốt cho SEO React)
 // GET /api/products/samsung-galaxy-s24-ultra
 router.get("/:slug", ProductController.getProductBySlug);
+
 
 // ─── Admin Routes (Cần middleware auth/admin) ──────────────────
 
