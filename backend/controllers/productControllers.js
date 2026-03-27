@@ -140,11 +140,22 @@ const ProductController = {
   // 3. API cho khách xem (Có tính toán khuyến mãi phức tạp)
   getAllProducts: async (req, res) => {
     try {
+<<<<<<< HEAD
       const { category, tag, sort, page = 1, limit = 10 } = req.query;
       const query = { status: "active" }; // Sửa lại 'active' cho chắc ăn
+=======
+      // ĐÃ SỬA CHỖ NÀY 1: Thêm keyword vào destructuring
+      const { category, tag, sort, keyword, page = 1, limit = 10 } = req.query;
+      const query = { status: Product.STATUS.ACTIVE };
+>>>>>>> 1b50f00367a47fef9f448eb08487435dac7479c6
 
       if (category) query.category = category;
       if (tag) query.tags = tag;
+
+      // ĐÃ SỬA CHỖ NÀY 2: Bắt biến keyword để tìm kiếm theo tên truyện bằng Regex (không phân biệt chữ hoa thường)
+      if (keyword) {
+        query.name = { $regex: keyword, $options: "i" };
+      }
 
       const products = await Product.find(query)
         .populate("category", "name slug")
