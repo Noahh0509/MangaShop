@@ -2,6 +2,7 @@ import Groq from "groq-sdk";
 import ChatSession from "../models/Chat.js"; 
 import Product from "../models/Product.js"; 
 import Cart from "../models/Cart.js";
+import Promotion from "../models/Promotion.js"; // Đã thêm model Promotion để tính toán giá sale
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -12,6 +13,7 @@ NHIỆM VỤ: Chỉ tư vấn dựa trên [DANH SÁCH TRUYỆN THỰC TẾ] đư
 LUẬT CẤM: 
 - Tuyệt đối không nhắc đến bất kỳ bộ truyện nào KHÔNG có trong danh sách dưới đây.
 - Không được tự bịa giá hoặc nội dung truyện.
+- NẾU SẢN PHẨM CÓ "GIÁ ƯU ĐÃI", BẮT BUỘC phải báo giá ưu đãi cho khách, có thể nhắc kèm giá gốc để khách thấy được khuyến mãi.
 - Nếu khách hỏi truyện không có trong danh sách, hãy nói: "Dạ hiện tại shop em chưa có bộ này, mình xem thử các bộ khác đang sẵn hàng nhé! 📚✨"
 XƯNG HÔ: Gọi khách là "mình/bạn", xưng "em". Thêm icon 📚✨ cho thân thiện.
 `;
@@ -26,7 +28,7 @@ export const chatWithAI = async (req, res) => {
       return res.status(400).json({ message: "Nội dung không được trống." });
     }
 
-    // --- 2. QUẢN LÝ PHIÊN CHAT (Sửa lỗi ObjectId) ---
+    // --- 2. QUẢN LÝ PHIÊN CHAT ---
     let session;
     if (sessionId?.match(/^[0-9a-fA-F]{24}$/)) {
       session = await ChatSession.findOne({ _id: sessionId, user: userId });
@@ -38,18 +40,60 @@ export const chatWithAI = async (req, res) => {
     // --- 3. TRUY XUẤT DỮ LIỆU THỰC TẾ (CHÌA KHÓA ĐỂ AI KHÔNG BỊA) ---
     let dbContext = "=== [DANH SÁCH TRUYỆN THỰC TẾ ĐANG CÓ] ===\n";
 
-    // A. LẤY DỮ LIỆU SẢN PHẨM (Format thành String để AI dễ đọc hơn JSON)
-    // Ưu tiên lấy các truyện đang Active
+    // A. LẤY DỮ LIỆU SẢN PHẨM VÀ KHUYẾN MÃI
+    const now = new Date();
+    
+    // 1. Lấy sản phẩm và populate các chương trình khuyến mãi (BỎ .lean() để dùng được method)
     let products = await Product.find({ status: "active" })
-      .select('name basePrice salePrice stock')
-      .limit(20).lean();
+      .populate({
+        path: 'promotions',
+        match: { status: 'active', startDate: { $lte: now }, endDate: { $gte: now } }
+      })
+      .limit(20);
+
+    // 2. Lấy thêm các khuyến mãi tự động áp dụng toàn sàn
+    const autoPromotions = await Promotion.findAutoApply();
 
     if (products.length > 0) {
-      products.forEach(p => {
-        const price = p.salePrice || p.basePrice;
+      for (const p of products) {
+        let baseP = p.basePrice || 0;
+        
+        // Giá khởi điểm là giá salePrice cứng của Product (nếu có)
+        let finalPrice = (p.salePrice && p.salePrice > 0 && p.salePrice < baseP) ? p.salePrice : baseP;
+        let appliedPromoName = "";
+
+        // Gộp chung khuyến mãi riêng của sản phẩm và khuyến mãi toàn sàn
+        const allPromos = [...(p.promotions || []), ...autoPromotions];
+
+        // Lặp qua các khuyến mãi để tính xem cái nào rẻ nhất
+        for (const promo of allPromos) {
+          if (promo && typeof promo.calculateDiscount === 'function') {
+            // Gọi hàm tính tiền từ Schema Promotion
+            const { finalPrice: discountedPrice } = promo.calculateDiscount(baseP, 1, p._id);
+            
+            // Nếu giá qua tính toán rẻ hơn finalPrice hiện tại thì cập nhật
+            if (discountedPrice < finalPrice) {
+              finalPrice = discountedPrice;
+              appliedPromoName = promo.name;
+            }
+          }
+        }
+
+        let priceText = "";
+        if (finalPrice < baseP) {
+          priceText = `Giá ưu đãi: ${finalPrice.toLocaleString()}đ (Giá gốc: ${baseP.toLocaleString()}đ)`;
+          if (appliedPromoName) {
+             priceText += ` [Áp dụng KM: ${appliedPromoName}]`; // Báo cho AI biết tên chương trình
+          }
+        } else {
+          priceText = `Giá: ${baseP.toLocaleString()}đ`;
+        }
+
         const stockStatus = p.stock > 0 ? `Còn ${p.stock} cuốn` : "Hết hàng";
-        dbContext += `- ${p.name} | Giá: ${price.toLocaleString()}đ | Tình trạng: ${stockStatus}\n`;
-      });
+        
+        // Cập nhật vào dbContext
+        dbContext += `- ${p.name} | ${priceText} | Tình trạng: ${stockStatus}\n`;
+      }
     } else {
       dbContext += "(Hiện tại database chưa có sản phẩm nào được kích hoạt)\n";
     }
@@ -88,7 +132,7 @@ export const chatWithAI = async (req, res) => {
         ...chatHistory
       ],
       model: "llama-3.3-70b-versatile",
-      temperature: 0.1, // Nhiệt độ thấp giúp AI trả lời chính xác dữ liệu cung cấp
+      temperature: 0.1, 
     });
 
     let aiReply = completion.choices[0]?.message?.content || "Em chưa rõ ý mình lắm ạ.";
