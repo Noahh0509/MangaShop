@@ -1,7 +1,7 @@
 import express from 'express';
 import { login, logout, refreshToken } from '../controllers/authController.js';
 import { protect } from '../middlewares/authMiddleware.js';
-
+import { forgotPassword, verifyOtp, resetPassword } from '../controllers/authController.js';
 const router = express.Router();
 
 /**
@@ -71,5 +71,86 @@ router.post('/logout', protect, logout);
  *         description: Refresh token không hợp lệ hoặc hết hạn
  */
 router.post('/refresh', refreshToken);
+
+
+//-------------------------------------------------- Dang test-----------------------------
+/**
+ * @swagger
+ * /api/auth/forgot-password:
+ *   post:
+ *     summary: Gửi OTP về email để đặt lại mật khẩu
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email]
+ *             properties:
+ *               email: { type: string, example: user@example.com }
+ *     responses:
+ *       200:
+ *         description: OTP đã được gửi (luôn 200 để tránh email enumeration)
+ *       500:
+ *         description: Lỗi máy chủ
+ */
+router.post('/forgot-password', forgotPassword);
+ 
+/**
+ * @swagger
+ * /api/auth/verify-otp:
+ *   post:
+ *     summary: Xác thực mã OTP
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, otp]
+ *             properties:
+ *               email: { type: string, example: user@example.com }
+ *               otp:   { type: string, example: "472819" }
+ *     responses:
+ *       200:
+ *         description: OTP hợp lệ, trả về verifyToken
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:      { type: string, example: success }
+ *                 verifyToken: { type: string }
+ *       400:
+ *         description: OTP sai hoặc hết hạn
+ */
+router.post('/verify-otp', verifyOtp);
+ 
+/**
+ * @swagger
+ * /api/auth/reset-password:
+ *   post:
+ *     summary: Đặt lại mật khẩu bằng verifyToken từ bước xác thực OTP
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, verifyToken, newPassword]
+ *             properties:
+ *               email:       { type: string, example: user@example.com }
+ *               verifyToken: { type: string }
+ *               newPassword: { type: string, example: "NewPass@123" }
+ *     responses:
+ *       200:
+ *         description: Đặt lại mật khẩu thành công
+ *       400:
+ *         description: Token không hợp lệ hoặc hết hạn
+ */
+router.post('/reset-password', resetPassword);
 
 export default router;
