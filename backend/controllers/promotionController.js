@@ -27,14 +27,21 @@ const promotionController = {
     },
 
     // 3. Gạt công tắc trạng thái (Dành cho cái Switch Toggle của sếp)
+    // 🎯 Sửa lại hàm Toggle trong promotionController.js
     toggleStatus: async (req, res) => {
         try {
             const { id } = req.params;
-            const { status } = req.body;
+            const { status } = req.body; // FE gửi qua 'active' hoặc 'inactive'
+
+            // 🚀 ĐỒNG BỘ: Status sao thì isAutoApply vậy
+            const autoValue = (status === "active");
 
             const promo = await Promotion.findByIdAndUpdate(
                 id,
-                { status, updatedBy: req.user?._id },
+                {
+                    status: status,
+                    isAutoApply: autoValue // ✨ Ép nó đi theo status luôn sếp ơi
+                },
                 { new: true }
             );
 
@@ -155,6 +162,34 @@ const promotionController = {
             });
         } catch (error) {
             console.error("Lỗi tạo KM:", error);
+            res.status(500).json({ success: false, message: error.message });
+        }
+    },
+
+    updatePromotion: async (req, res) => {
+        try {
+            const { id } = req.params;
+            const updateData = req.body;
+
+            // Nếu sếp đổi status thì cũng nên logic lại isAutoApply cho khớp
+            if (updateData.status) {
+                updateData.isAutoApply = (updateData.status === "active");
+            }
+
+            const updated = await Promotion.findByIdAndUpdate(id, updateData, { new: true });
+            res.json({ success: true, message: "Đã cập nhật KM!", data: updated });
+        } catch (error) {
+            res.status(500).json({ success: false, message: error.message });
+        }
+    },
+
+    // 2. Xóa khuyến mãi (Dành cho nút Xóa)
+    deletePromotion: async (req, res) => {
+        try {
+            const { id } = req.params;
+            await Promotion.findByIdAndDelete(id);
+            res.json({ success: true, message: "Đã tiễn mã này lên đường!" });
+        } catch (error) {
             res.status(500).json({ success: false, message: error.message });
         }
     },

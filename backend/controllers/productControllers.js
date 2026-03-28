@@ -246,7 +246,7 @@ const ProductController = {
         .sort(sort || "-createdAt")
         .limit(limit * 1)
         .skip((page - 1) * limit);
-
+      console.log("Dữ liệu sau khi lấy:", products[0].promotions);
       const enrichedProducts = await Promise.all(
         products.map(async (product) => {
           let bestPromo = null;

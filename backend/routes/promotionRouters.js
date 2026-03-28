@@ -22,6 +22,8 @@ router.get("/admin-all", promotionController.getAllPromotions);
 // 4. Tạo mã mới
 router.post("/", promotionController.createPromotion);
 
+router.put("/:id", promotionController.updatePromotion);
+router.delete("/:id", promotionController.deletePromotion);
 // 5. Gạt công tắc Bật/Tắt
 router.patch("/:id/toggle", promotionController.toggleStatus);
 

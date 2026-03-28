@@ -314,5 +314,7 @@ promotionSchema.statics.findForProduct = function (productId, categoryId) {
   }).sort({ priority: -1 });
 };
 
+promotionSchema.index({ "endDate": 1 }, { expireAfterSeconds: 0 });
+
 const Promotion = mongoose.model("Promotion", promotionSchema);
 export default Promotion;
