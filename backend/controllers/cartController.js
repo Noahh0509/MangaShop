@@ -10,11 +10,14 @@ export const getCart = async (req, res) => {
       "name slug images basePrice salePrice stock status",
     );
 
+    if (cart && cart.items) {
+      cart.items = cart.items.filter(item => item.product !== null);
+    }
+
     // Nếu khách chưa có giỏ, tạo mới một cái rỗng
     if (!cart) {
       cart = await Cart.create({ user: req.user._id, items: [] });
     }
-
     res.status(200).json({ success: true, cart });
   } catch (error) {
     res
