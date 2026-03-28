@@ -4,37 +4,29 @@ import Product from "../models/Product.js";
 // 1. Lấy giỏ hàng (Read)
 export const getCart = async (req, res) => {
   try {
-    // Tìm giỏ và populate thông tin sản phẩm để hiển thị lên giao diện
     let cart = await Cart.findOne({ user: req.user._id }).populate(
       "items.product",
-      "name slug images basePrice salePrice stock status",
+      "name slug images basePrice salePrice stock status"
     );
 
-    if (cart && cart.items.length > 0) {
-      // 1. Lọc rác (Giữ nguyên như nãy)
-      const validItems = cart.items.filter(item => item.product !== null);
-
-      // 2. 🎯 NẾU CÓ RÁC THÌ TÍNH LẠI TỔNG NGAY TẠI ĐÂY
-      if (validItems.length !== cart.items.length) {
-        cart.items = validItems;
-
-        // Tính lại tổng tiền và số lượng để Frontend hiện đúng
-        cart.totalPrice = validItems.reduce((total, item) => total + (item.price * item.quantity), 0);
-        cart.totalItems = validItems.reduce((total, item) => total + item.quantity, 0);
-
-        await cart.save(); // Lưu lại bản "sạch" vào DB
-      }
-    }
-
-    // Nếu khách chưa có giỏ, tạo mới một cái rỗng
+    // Nếu khách chưa có giỏ, tạo mới rỗng
     if (!cart) {
       cart = await Cart.create({ user: req.user._id, items: [] });
+      return res.status(200).json({ success: true, cart });
     }
+
+    // Kiểm tra và dọn dẹp sản phẩm rác (đã bị xóa khỏi DB)
+    const originalLength = cart.items.length;
+    cart.items = cart.items.filter(item => item.product !== null);
+
+    // Nếu có rác, lưu lại bản sạch
+    if (cart.items.length !== originalLength) {
+      await cart.save(); 
+    }
+
     res.status(200).json({ success: true, cart });
   } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Lỗi khi lấy giỏ hàng", error: error.message });
+    res.status(500).json({ message: "Lỗi khi lấy giỏ hàng", error: error.message });
   }
 };
 
@@ -43,12 +35,9 @@ export const addToCart = async (req, res) => {
   try {
     const { productId, quantity = 1 } = req.body;
 
-    // Kiểm tra sản phẩm có tồn tại và còn hàng không bằng method có sẵn trong Product.js
     const product = await Product.findById(productId);
     if (!product || !product.isAvailable()) {
-      return res
-        .status(404)
-        .json({ message: "Sản phẩm không tồn tại hoặc đã hết hàng" });
+      return res.status(404).json({ message: "Sản phẩm không tồn tại hoặc đã hết hàng" });
     }
 
     let cart = await Cart.findOne({ user: req.user._id });
@@ -56,37 +45,32 @@ export const addToCart = async (req, res) => {
       cart = new Cart({ user: req.user._id, items: [] });
     }
 
-    // Tận dụng Virtual 'displayPrice' để lấy giá đúng (giá sale hoặc giá gốc)
-    // Tận dụng Method 'addItem' để tự động xử lý trùng lặp và save
+    // SỬ DỤNG METHOD: addItem đã bao gồm logic check trùng và tính lại tổng
     await cart.addItem(productId, product.displayPrice, quantity);
 
-    res
-      .status(200)
-      .json({ success: true, message: "Đã thêm vào giỏ hàng", cart });
+    // Populate để trả về FE hiển thị ngay
+    const updatedCart = await Cart.findById(cart._id).populate(
+      "items.product",
+      "name slug images basePrice salePrice stock status"
+    );
+
+    res.status(200).json({ success: true, message: "Đã thêm vào giỏ hàng", cart: updatedCart });
   } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Lỗi khi thêm vào giỏ hàng", error: error.message });
+    res.status(500).json({ message: "Lỗi khi thêm vào giỏ hàng", error: error.message });
   }
 };
 
 // 3. Cập nhật số lượng (Update)
-// Cập nhật hàm updateCartItem
 export const updateCartItem = async (req, res) => {
   try {
     const { productId, quantity } = req.body;
 
-    if (quantity < 0) {
-      return res.status(400).json({ message: "Số lượng không hợp lệ." });
-    }
+    if (quantity < 0) return res.status(400).json({ message: "Số lượng không hợp lệ." });
 
     const cart = await Cart.findOne({ user: req.user._id });
-    if (!cart)
-      return res.status(404).json({ message: "Không tìm thấy giỏ hàng." });
+    if (!cart) return res.status(404).json({ message: "Không tìm thấy giỏ hàng." });
 
-    const itemIndex = cart.items.findIndex(
-      (p) => p.product.toString() === productId,
-    );
+    const itemIndex = cart.items.findIndex(p => p.product.toString() === productId);
 
     if (itemIndex > -1) {
       if (quantity === 0) {
@@ -95,13 +79,12 @@ export const updateCartItem = async (req, res) => {
         cart.items[itemIndex].quantity = quantity;
       }
 
+      // Lưu để middleware tính lại tổng tiền tự động (nếu có trong Schema)
       await cart.save();
 
-      // QUAN TRỌNG: Phải populate lại trước khi gửi về FE
-      // để FE có dữ liệu product.name, images... để hiển thị
       const updatedCart = await Cart.findById(cart._id).populate(
         "items.product",
-        "name slug images basePrice salePrice stock status",
+        "name slug images basePrice salePrice stock status"
       );
 
       return res.status(200).json({ success: true, cart: updatedCart });
@@ -109,9 +92,7 @@ export const updateCartItem = async (req, res) => {
 
     res.status(404).json({ message: "Sản phẩm không có trong giỏ hàng." });
   } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Lỗi cập nhật giỏ hàng", error: error.message });
+    res.status(500).json({ message: "Lỗi cập nhật giỏ hàng", error: error.message });
   }
 };
 
@@ -121,28 +102,19 @@ export const removeFromCart = async (req, res) => {
     const { productId } = req.params;
     const cart = await Cart.findOne({ user: req.user._id });
 
-    if (cart) {
-      // 1. Xóa sản phẩm ra khỏi mảng (Code cũ của sếp)
-      cart.items = cart.items.filter(item => item.product.toString() !== productId);
+    if (!cart) return res.status(404).json({ message: "Giỏ hàng rỗng" });
 
-      // 2. 🚀 THÊM ĐOẠN NÀY: Quét sạch rác (null) thêm một lần nữa cho chắc
-      // Populate lại để kiểm tra xem có ông nào bị xóa khỏi DB không
-      await cart.populate("items.product");
-      cart.items = cart.items.filter(item => item.product !== null);
+    // SỬ DỤNG METHOD: removeItem (đảm bảo method này đã có trong Cart.js của bạn)
+    await cart.removeItem(productId);
 
-      // 3. Tính lại tổng tiền/số lượng (Nếu sếp có dùng các trường này)
-      cart.totalPrice = cart.items.reduce((total, item) => total + (item.price * item.quantity), 0);
-      cart.totalItems = cart.items.reduce((total, item) => total + item.quantity, 0);
-
-      await cart.save();
-    }
-    res
-      .status(200)
-      .json({ success: true, message: "Đã xóa sản phẩm khỏi giỏ", cart });
+    const updatedCart = await Cart.findById(cart._id).populate(
+      "items.product",
+      "name slug images basePrice salePrice stock status"
+    );
+    
+    res.status(200).json({ success: true, message: "Đã xóa sản phẩm", cart: updatedCart });
   } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Lỗi khi xóa sản phẩm", error: error.message });
+    res.status(500).json({ message: "Lỗi khi xóa sản phẩm", error: error.message });
   }
 };
 
@@ -151,15 +123,10 @@ export const clearAllCart = async (req, res) => {
   try {
     const cart = await Cart.findOne({ user: req.user._id });
     if (cart) {
-      // Tận dụng Method 'clearCart' trong Cart.js
-      await cart.clearCart();
+      await cart.clearCart(); // SỬ DỤNG METHOD TRONG MODEL
     }
-    res
-      .status(200)
-      .json({ success: true, message: "Giỏ hàng đã được làm trống" });
+    res.status(200).json({ success: true, message: "Giỏ hàng đã được làm trống" });
   } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Lỗi khi dọn dẹp giỏ hàng", error: error.message });
+    res.status(500).json({ message: "Lỗi khi dọn dẹp giỏ hàng", error: error.message });
   }
 };
