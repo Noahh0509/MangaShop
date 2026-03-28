@@ -10,8 +10,20 @@ export const getCart = async (req, res) => {
       "name slug images basePrice salePrice stock status",
     );
 
-    if (cart && cart.items) {
-      cart.items = cart.items.filter(item => item.product !== null);
+   if (cart && cart.items.length > 0) {
+      // 1. Lọc rác (Giữ nguyên như nãy)
+      const validItems = cart.items.filter(item => item.product !== null);
+      
+      // 2. 🎯 NẾU CÓ RÁC THÌ TÍNH LẠI TỔNG NGAY TẠI ĐÂY
+      if (validItems.length !== cart.items.length) {
+        cart.items = validItems;
+        
+        // Tính lại tổng tiền và số lượng để Frontend hiện đúng
+        cart.totalPrice = validItems.reduce((total, item) => total + (item.price * item.quantity), 0);
+        cart.totalItems = validItems.reduce((total, item) => total + item.quantity, 0);
+        
+        await cart.save(); // Lưu lại bản "sạch" vào DB
+      }
     }
 
     // Nếu khách chưa có giỏ, tạo mới một cái rỗng
