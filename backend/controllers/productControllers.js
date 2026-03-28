@@ -27,6 +27,7 @@ const ProductController = {
 
       const products = await Product.find(query)
         .populate("category", "name")
+        .populate("promotions")
         .sort("-createdAt")
         .skip(skip)
         .limit(limit);
@@ -241,29 +242,52 @@ const ProductController = {
 
       const products = await Product.find(query)
         .populate("category", "name slug")
+        .populate("promotions")
         .sort(sort || "-createdAt")
         .limit(limit * 1)
         .skip((page - 1) * limit);
 
       const enrichedProducts = await Promise.all(
         products.map(async (product) => {
-          const promo = await Promotion.findForProduct(
-            product._id,
-            product.category?._id,
-          );
+          let bestPromo = null;
 
-          const bestPromo = promo[0] || null;
+          // 🎯 1. ƯU TIÊN MÃ GÁN RIÊNG (Đã được populate thành Object)
+          if (product.promotions && product.promotions.length > 0) {
+            bestPromo = product.promotions[0];
+          }
+
+          // 🎯 2. NẾU KHÔNG CÓ RIÊNG -> TÌM CHUNG
+          // (Check xem bestPromo có phải object chưa, nếu chưa hoặc null thì tìm tiếp)
+          if (!bestPromo || typeof bestPromo !== 'object') {
+            const commonPromos = await Promotion.findForProduct(
+              product._id,
+              product.category?._id
+            );
+            bestPromo = commonPromos[0] || null;
+          }
+
           let finalPrice = product.basePrice;
           let promoInfo = null;
 
-          if (bestPromo) {
-            const calculation = bestPromo.calculateDiscount(product.basePrice);
-            finalPrice = calculation.finalPrice;
-            promoInfo = {
-              name: bestPromo.name,
-              discountType: bestPromo.discountType,
-              endDate: bestPromo.endDate,
-            };
+          // 🎯 3. TÍNH TOÁN (Đảm bảo bestPromo là object có data)
+          if (bestPromo && typeof bestPromo === 'object' && bestPromo.discountValue) {
+            const now = new Date();
+            const start = new Date(bestPromo.startDate);
+            const end = bestPromo.endDate ? new Date(bestPromo.endDate) : null;
+
+            // Kiểm tra thời hạn
+            if (now >= start && (!end || now <= end)) {
+              // Gọi hàm tính toán trong model Promotion của sếp
+              const calculation = bestPromo.calculateDiscount(product.basePrice);
+              finalPrice = calculation.finalPrice;
+
+              promoInfo = {
+                name: bestPromo.name,
+                discountType: bestPromo.discountType,
+                discountValue: bestPromo.discountValue,
+                endDate: bestPromo.endDate,
+              };
+            }
           }
 
           return {
@@ -296,6 +320,53 @@ const ProductController = {
       res.json({ success: true, data: product, activePromotions: promotions });
     } catch (error) {
       res.status(500).json({ message: error.message });
+    }
+  },
+
+  applyPromotion: async (req, res) => {
+    try {
+      const { productId } = req.params;
+      const { promotionId } = req.body;
+
+      // 🎯 Chuẩn bị mảng để đưa vào trường 'promotions' trong Model
+      const updateValue = promotionId ? [promotionId] : [];
+
+      const updatedProduct = await Product.findByIdAndUpdate(
+        productId,
+        // 🚀 PHẢI DÙNG ĐÚNG TÊN TRƯỜNG LÀ 'promotions' (SỐ NHIỀU)
+        { $set: { promotions: updateValue } },
+        { new: true }
+      );
+
+      if (!updatedProduct) {
+        return res.status(404).json({ success: false, message: "Không tìm thấy truyện này sếp ơi!" });
+      }
+
+      res.status(200).json({
+        success: true,
+        message: "Đã cập nhật ưu đãi cho tác phẩm!",
+        data: updatedProduct
+      });
+    } catch (error) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  },
+
+  // ✅ 2. Áp dụng (hoặc Hủy) khuyến mãi cho TẤT CẢ sản phẩm (Sale All)
+  applyPromotionToAll: async (req, res) => {
+    try {
+      const { promotionId } = req.body;
+      const updateValue = promotionId ? [promotionId] : [];
+
+      // UpdateMany sẽ quét toàn bộ Collection Product
+      await Product.updateMany({}, { $set: { promotions: updateValue } });
+
+      res.status(200).json({
+        success: true,
+        message: promotionId ? "Đã nhuộm vàng toàn bộ cửa hàng!" : "Đã gỡ bỏ toàn bộ khuyến mãi!"
+      });
+    } catch (error) {
+      res.status(500).json({ success: false, message: error.message });
     }
   },
 };

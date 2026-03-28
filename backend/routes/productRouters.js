@@ -3,37 +3,25 @@ import ProductController from "../controllers/productControllers.js";
 
 const router = express.Router();
 
-//Lấy list sản phẩm cho thằng admin
+// ─── 1. Admin Routes (Cố định - Ưu tiên cao nhất) ──────────────────
 router.get('/admin-all', ProductController.getAdminProducts);
 router.get('/categories', ProductController.getCategories);
 
-// ─── Public Routes ──────────────────────────────────────────────
+// 🎯 Group Khuyến mãi (Đưa cái ALL lên trên cái :productId)
+router.patch("/apply-promotion-all", ProductController.applyPromotionToAll);
+router.patch("/:productId/apply-promotion", ProductController.applyPromotion);
 
-// Lấy danh sách sản phẩm (có filter theo category, tags, search)
-// GET /api/products?category=abc&sort=-createdAt
+// ─── 2. Public Routes (Danh sách) ──────────────────────────────────
 router.get("/", ProductController.getAllProducts);
 
-// Lấy sản phẩm nổi bật (Featured)
-// router.get("/featured", ProductController.getFeaturedProducts);
-
-//tao sản phẩm mới (Admin)
+// ─── 3. Admin CRUD (Tạo, Sửa, Xóa) ──────────────────────────────────
 router.post('/', ProductController.createProduct);
-// Chi tiết sản phẩm qua Slug (Tốt cho SEO React)
-// GET /api/products/samsung-galaxy-s24-ultra
-// Cập nhật sản phẩm (Admin)
 router.put('/:id', ProductController.updateProduct);
-// Xóa sản phẩm (Admin)
 router.delete('/:id', ProductController.deleteProduct);
 
+// ─── 4. Detail Routes (Biến số - Luôn để dưới cùng) ────────────────
+// 🚨 Lưu ý: Nếu sếp để /:slug lên trên /admin-all, 
+// thì khi gọi /admin-all nó sẽ tưởng "admin-all" là cái slug đó!
 router.get("/:slug", ProductController.getProductBySlug);
-
-
-// ─── Admin Routes (Cần middleware auth/admin) ──────────────────
-
-// Thêm mới sản phẩm
-// router.post("/", ProductController.createProduct);
-
-// Cập nhật kho hàng hoặc giá nhanh
-// router.patch("/:id/stock", ProductController.updateStock);
 
 export default router;

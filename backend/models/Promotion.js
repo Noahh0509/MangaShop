@@ -2,10 +2,10 @@ import mongoose from "mongoose";
 
 // ─── Constants ──────────────────────────────────────────────────
 const DISCOUNT_TYPE = {
-  PERCENTAGE:  "percentage",   // giảm theo %
-  FIXED:       "fixed",        // giảm theo số tiền
+  PERCENTAGE: "percentage",   // giảm theo %
+  FIXED: "fixed",        // giảm theo số tiền
   BUY_X_GET_Y: "buy_x_get_y", // mua X tặng Y
-  FLASH_SALE:  "flash_sale",   // flash sale (% + thời gian + giới hạn slot)
+  FLASH_SALE: "flash_sale",   // flash sale (% + thời gian + giới hạn slot)
 };
 
 const APPLY_TO = {
@@ -26,7 +26,7 @@ const buyXGetYSchema = new mongoose.Schema(
   {
     buyQuantity: { type: Number, required: true, min: 1 },
     getQuantity: { type: Number, required: true, min: 1 },
-    getProduct:  {                                          // null = tặng chính SP đó
+    getProduct: {                                          // null = tặng chính SP đó
       type: mongoose.Schema.Types.ObjectId, ref: "Product", default: null,
     },
   },
@@ -82,8 +82,8 @@ const promotionSchema = new mongoose.Schema(
 
     // ─── Giá trị giảm (percentage / fixed / flash_sale) ──────────
     discountValue: { type: Number, default: null, min: 0 }, // % hoặc số tiền
-    maxDiscount:   { type: Number, default: null, min: 0 }, // trần giảm tối đa (cho %)
-    minOrderValue: { type: Number, default: 0,    min: 0 }, // đơn tối thiểu
+    maxDiscount: { type: Number, default: null, min: 0 }, // trần giảm tối đa (cho %)
+    minOrderValue: { type: Number, default: 0, min: 0 }, // đơn tối thiểu
 
     // ─── Cấu hình đặc thù ────────────────────────────────────────
     buyXGetY: { type: buyXGetYSchema, default: null },
@@ -107,17 +107,17 @@ const promotionSchema = new mongoose.Schema(
 
     // ─── Thời gian & Giới hạn ────────────────────────────────────
     startDate: { type: Date, required: true },
-    endDate:   { type: Date, required: true },
+    endDate: { type: Date, required: true },
 
     // ─── Giới hạn sử dụng ────────────────────────────────────────
-    usageLimit:        { type: Number, default: null, min: 1 },
-    usageLimitPerUser: { type: Number, default: 1,    min: 1 },
-    usedCount:         { type: Number, default: 0 },
+    usageLimit: { type: Number, default: null, min: 1 },
+    usageLimitPerUser: { type: Number, default: 1, min: 1 },
+    usedCount: { type: Number, default: 0 },
 
     // ─── Cấu hình ────────────────────────────────────────────────
-    status:      { type: String, enum: Object.values(STATUS), default: STATUS.DRAFT },
+    status: { type: String, enum: Object.values(STATUS), default: STATUS.DRAFT },
     isAutoApply: { type: Boolean, default: false },  // tự áp dụng, không cần code
-    priority:    { type: Number,  default: 0 },      // ưu tiên khi nhiều KM trùng
+    priority: { type: Number, default: 0 },      // ưu tiên khi nhiều KM trùng
 
     // ─── Audit ───────────────────────────────────────────────────
     createdBy: {
@@ -160,30 +160,53 @@ promotionSchema.virtual("isCurrentlyActive").get(function () {
 // ─── Methods (Instance) ──────────────────────────────────────────
 
 // Tính giá sau khuyến mãi
-promotionSchema.methods.calculateDiscount = function (originalPrice, quantity = 1) {
-  if (!this.isCurrentlyActive) return { discountAmount: 0, finalPrice: originalPrice };
+// 🎯 Thêm tham số productId vào để tính được Flash Sale
+promotionSchema.methods.calculateDiscount = function (originalPrice, quantity = 1, productId = null) {
+  const now = new Date();
+
+  // 1. Kiểm tra thời hạn trước (Bỏ qua check status ACTIVE nếu sếp muốn ép dùng mã này)
+  const isExpired = this.endDate && now > this.endDate;
+  const isNotStarted = now < this.startDate;
+
+  if (isExpired || isNotStarted) {
+    return { discountAmount: 0, finalPrice: originalPrice };
+  }
+
+  // 2. Kiểm tra giới hạn sử dụng (Nếu sếp có dùng usageLimit)
+  if (this.usageLimit && this.usedCount >= this.usageLimit) {
+    return { discountAmount: 0, finalPrice: originalPrice };
+  }
 
   let discountAmount = 0;
 
   switch (this.discountType) {
     case DISCOUNT_TYPE.FLASH_SALE: {
-      // Tìm giá flash sale riêng của sản phẩm này
-      const flashItem = this.flashSaleItems.find(item => item.product.toString() === productId.toString());
+      // ✅ Đã có productId truyền vào nên không lo bị lỗi undefined nữa
+      if (!productId || !this.flashSaleItems) break;
+
+      const flashItem = this.flashSaleItems.find(
+        (item) => item.product.toString() === productId.toString()
+      );
+
       if (flashItem && flashItem.isAvailable) {
         discountAmount = originalPrice - flashItem.flashPrice;
       }
       break;
     }
+
     case DISCOUNT_TYPE.PERCENTAGE: {
       discountAmount = (originalPrice * this.discountValue) / 100;
-      if (this.maxDiscount)
+      if (this.maxDiscount) {
         discountAmount = Math.min(discountAmount, this.maxDiscount);
+      }
       break;
     }
+
     case DISCOUNT_TYPE.FIXED: {
       discountAmount = this.discountValue;
       break;
     }
+
     case DISCOUNT_TYPE.BUY_X_GET_Y: {
       if (!this.buyXGetY) break;
       const { buyQuantity, getQuantity } = this.buyXGetY;
@@ -194,13 +217,14 @@ promotionSchema.methods.calculateDiscount = function (originalPrice, quantity = 
     }
   }
 
+  // 3. Đảm bảo số tiền giảm không vượt quá giá gốc và không âm
   discountAmount = Math.max(0, Math.min(discountAmount, originalPrice));
+
   return {
     discountAmount: Math.round(discountAmount),
-    finalPrice:     Math.round(Math.max(0, originalPrice - discountAmount)),
+    finalPrice: Math.round(originalPrice - discountAmount),
   };
 };
-
 // Kiểm tra KM có áp dụng được cho sản phẩm không
 promotionSchema.methods.isApplicableToProduct = function (productId, categoryId) {
   const pid = productId.toString();
@@ -209,8 +233,8 @@ promotionSchema.methods.isApplicableToProduct = function (productId, categoryId)
   if (this.excludedProducts.map(String).includes(pid)) return false;
 
   switch (this.applyTo) {
-    case APPLY_TO.ALL:        return true;
-    case APPLY_TO.PRODUCTS:   return this.applicableProducts.map(String).includes(pid);
+    case APPLY_TO.ALL: return true;
+    case APPLY_TO.PRODUCTS: return this.applicableProducts.map(String).includes(pid);
     case APPLY_TO.CATEGORIES: return !!cid && this.applicableCategories.map(String).includes(cid);
     default: return false;
   }
@@ -238,17 +262,17 @@ promotionSchema.methods.checkAndExpire = async function () {
 
 // ─── Statics ─────────────────────────────────────────────────────
 promotionSchema.statics.DISCOUNT_TYPE = DISCOUNT_TYPE;
-promotionSchema.statics.APPLY_TO      = APPLY_TO;
-promotionSchema.statics.STATUS        = STATUS;
+promotionSchema.statics.APPLY_TO = APPLY_TO;
+promotionSchema.statics.STATUS = STATUS;
 
 // Tất cả KM đang active + tự động áp dụng
 promotionSchema.statics.findAutoApply = function () {
   const now = new Date();
   return this.find({
     isAutoApply: true,
-    status:      STATUS.ACTIVE,
-    startDate:   { $lte: now },
-    endDate:     { $gte: now },
+    status: STATUS.ACTIVE,
+    startDate: { $lte: now },
+    endDate: { $gte: now },
   }).sort({ priority: -1 });
 };
 
@@ -256,10 +280,10 @@ promotionSchema.statics.findAutoApply = function () {
 promotionSchema.statics.findByCode = function (code) {
   const now = new Date();
   return this.findOne({
-    code:      code.toUpperCase().trim(),
-    status:    STATUS.ACTIVE,
+    code: code.toUpperCase().trim(),
+    status: STATUS.ACTIVE,
     startDate: { $lte: now },
-    endDate:   { $gte: now },
+    endDate: { $gte: now },
   });
 };
 
@@ -268,9 +292,9 @@ promotionSchema.statics.findActiveFlashSales = function () {
   const now = new Date();
   return this.find({
     discountType: DISCOUNT_TYPE.FLASH_SALE,
-    status:       STATUS.ACTIVE,
-    startDate:    { $lte: now },
-    endDate:      { $gte: now },
+    status: STATUS.ACTIVE,
+    startDate: { $lte: now },
+    endDate: { $gte: now },
   }).populate("flashSaleItems.product");
 };
 
@@ -278,9 +302,9 @@ promotionSchema.statics.findActiveFlashSales = function () {
 promotionSchema.statics.findForProduct = function (productId, categoryId) {
   const now = new Date();
   return this.find({
-    status:           STATUS.ACTIVE,
-    startDate:        { $lte: now },
-    endDate:          { $gte: now },
+    status: STATUS.ACTIVE,
+    startDate: { $lte: now },
+    endDate: { $gte: now },
     excludedProducts: { $nin: [productId] },
     $or: [
       { applyTo: APPLY_TO.ALL },

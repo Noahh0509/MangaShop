@@ -125,13 +125,39 @@ const promotionController = {
     // 3. Admin: Tạo chương trình khuyến mãi mới
     createPromotion: async (req, res) => {
         try {
-            const newPromo = new Promotion(req.body);
-            await newPromo.save();
-            res.status(201).json({ success: true, data: newPromo });
+            const { name, code, discountType, discountValue, startDate, endDate, minOrderValue } = req.body;
+
+            // Logic check trùng mã (nếu có nhập mã)
+            if (code) {
+                const existing = await Promotion.findOne({ code: code.toUpperCase() });
+                if (existing) return res.status(400).json({ success: false, message: "Mã này đã tồn tại rồi sếp ơi!" });
+            }
+
+            // Tạo object dữ liệu mới
+            const newPromotion = new Promotion({
+                name,
+                code: code ? code.toUpperCase() : null, // Nếu không nhập thì để null (Auto apply)
+                discountType,
+                discountValue,
+                startDate,
+                endDate,
+                minOrderValue: minOrderValue || 0,
+                status: 'active', // Mặc định tạo xong là cho chạy luôn
+                createdBy: req.user?._id // Lưu ID admin tạo (nếu sếp đã làm Auth)
+            });
+
+            await newPromotion.save();
+
+            res.status(201).json({
+                success: true,
+                message: "Đã kích hoạt chương trình ưu đãi mới!",
+                data: newPromotion
+            });
         } catch (error) {
-            res.status(400).json({ message: error.message });
+            console.error("Lỗi tạo KM:", error);
+            res.status(500).json({ success: false, message: error.message });
         }
-    }
+    },
 };
 
 export default promotionController;
