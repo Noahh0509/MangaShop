@@ -11,11 +11,8 @@ import cartRouter from "./routes/cartRouters.js";
 import checkoutRouter from "./routes/checkoutRouters.js";
 import productRouter from "./routes/productRouters.js";
 import promotionRouter from "./routes/promotionRouters.js";
-<<<<<<< HEAD
 import categoryRouters from "./routes/categoryRouters.js";
-=======
 import chatRoutes from './routes/chatRouters.js';
->>>>>>> 20c18eefeab42341705acc2e762b9e3964b7c325
 connectDB();
 
 const app = express();
@@ -51,13 +48,10 @@ app.use("/api/cart", cartRouter);
 app.use("/api/checkout", checkoutRouter);
 app.use("/api/products", productRouter);
 app.use("/api/promotions", promotionRouter);
-<<<<<<< HEAD
 app.use("/api/categories", categoryRouters);
-=======
 app.use('/api/chat', chatRoutes);
 
 
->>>>>>> 20c18eefeab42341705acc2e762b9e3964b7c325
 // ─── 404 ────────────────────────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({ message: "Route không tồn tại." });
