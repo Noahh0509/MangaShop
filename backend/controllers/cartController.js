@@ -10,18 +10,18 @@ export const getCart = async (req, res) => {
       "name slug images basePrice salePrice stock status",
     );
 
-   if (cart && cart.items.length > 0) {
+    if (cart && cart.items.length > 0) {
       // 1. Lọc rác (Giữ nguyên như nãy)
       const validItems = cart.items.filter(item => item.product !== null);
-      
+
       // 2. 🎯 NẾU CÓ RÁC THÌ TÍNH LẠI TỔNG NGAY TẠI ĐÂY
       if (validItems.length !== cart.items.length) {
         cart.items = validItems;
-        
+
         // Tính lại tổng tiền và số lượng để Frontend hiện đúng
         cart.totalPrice = validItems.reduce((total, item) => total + (item.price * item.quantity), 0);
         cart.totalItems = validItems.reduce((total, item) => total + item.quantity, 0);
-        
+
         await cart.save(); // Lưu lại bản "sạch" vào DB
       }
     }
@@ -122,8 +122,19 @@ export const removeFromCart = async (req, res) => {
     const cart = await Cart.findOne({ user: req.user._id });
 
     if (cart) {
-      // Tận dụng Method 'removeItem' trong Cart.js
-      await cart.removeItem(productId);
+      // 1. Xóa sản phẩm ra khỏi mảng (Code cũ của sếp)
+      cart.items = cart.items.filter(item => item.product.toString() !== productId);
+
+      // 2. 🚀 THÊM ĐOẠN NÀY: Quét sạch rác (null) thêm một lần nữa cho chắc
+      // Populate lại để kiểm tra xem có ông nào bị xóa khỏi DB không
+      await cart.populate("items.product");
+      cart.items = cart.items.filter(item => item.product !== null);
+
+      // 3. Tính lại tổng tiền/số lượng (Nếu sếp có dùng các trường này)
+      cart.totalPrice = cart.items.reduce((total, item) => total + (item.price * item.quantity), 0);
+      cart.totalItems = cart.items.reduce((total, item) => total + item.quantity, 0);
+
+      await cart.save();
     }
     res
       .status(200)
