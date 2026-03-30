@@ -244,22 +244,42 @@ export const checkMomoTransactionStatus = async (req, res) => {
 // =========================================================
 // HELPER: XỬ LÝ LOGIC KHI ĐƠN HÀNG THÀNH CÔNG (DÙNG CHUNG)
 // =========================================================
-const processSuccessfulOrder = async (invoiceCode, transId = null) => {
+const processSuccessfulOrder = async (invoiceCode, transId = null, resultCode = 0) => {
   const invoice = await Invoice.findOne({ invoiceCode });
 
-  // Tránh việc cộng dồn nếu MoMo gọi Callback nhiều lần
-  if (!invoice || invoice.payment.status === "PAID") return invoice;
+  // 🛡️ 1. Chống lỗi & Chống cộng dồn (Idempotency)
+  // Nếu không thấy đơn hoặc đơn đã thanh toán/đã hủy rồi thì không làm gì nữa
+  if (!invoice || invoice.payment.status === "PAID" || invoice.status === "CANCELLED") {
+    return invoice;
+  }
 
   try {
-    // 1. Cập nhật hóa đơn
-    invoice.payment.status =
-      invoice.payment.method === "MOMO" ? "PAID" : "PENDING";
+    // 🎯 2. KIỂM TRA KẾT QUẢ TỪ MOMO
+    // resultCode === 0 (hoặc "0") là thành công rực rỡ
+    const isSuccess = Number(resultCode) === 0;
+
+    if (!isSuccess) {
+      // ❌ TRƯỜNG HỢP THANH TOÁN THẤT BẠI / KHÁCH BẤM HỦY TRÊN MOMO
+      invoice.payment.status = "FAILED";
+      invoice.status = "CANCELLED"; // Sếp muốn nó về CANCELLED nè
+      if (transId) invoice.payment.transactionId = transId;
+      await invoice.save();
+      
+      console.log(`⚠️ Hóa đơn ${invoiceCode} đã bị HỦY do thanh toán thất bại (Mã lỗi: ${resultCode})`);
+      return invoice;
+    }
+
+    // ✅ 3. TRƯỜNG HỢP THANH TOÁN THÀNH CÔNG
+    // Cập nhật trạng thái thanh toán
+    invoice.payment.status = "PAID";
     if (transId) invoice.payment.transactionId = transId;
-    if (invoice.payment.method === "MOMO") invoice.payment.paidAt = new Date();
-    invoice.status = "CONFIRMED";
+    invoice.payment.paidAt = new Date();
+    
+    // Đơn hàng chuyển sang PENDING để Admin duyệt giao hàng
+    invoice.status = "PENDING"; 
     await invoice.save();
 
-    // 2. Trừ tồn kho và Tăng lượt bán
+    // 🚀 4. TRỪ TỒN KHO & TĂNG LƯỢT BÁN (Chỉ chạy khi thành công)
     const bulkOps = invoice.items.map((item) => ({
       updateOne: {
         filter: { _id: item.product },
@@ -268,12 +288,14 @@ const processSuccessfulOrder = async (invoiceCode, transId = null) => {
     }));
     await Product.bulkWrite(bulkOps);
 
-    // 3. Làm trống giỏ hàng của user
+    // 🛒 5. LÀM TRỐNG GIỎ HÀNG
     await Cart.findOneAndDelete({ user: invoice.user });
 
+    console.log(`✅ Hóa đơn ${invoiceCode} xử lý THÀNH CÔNG -> Chuyển trạng thái: PENDING`);
     return invoice;
+
   } catch (error) {
-    console.error("Lỗi processSuccessfulOrder:", error);
+    console.error("❌ Lỗi processSuccessfulOrder:", error);
     throw error;
   }
 };

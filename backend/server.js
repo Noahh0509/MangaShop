@@ -14,6 +14,7 @@ import promotionRouter from "./routes/promotionRouters.js";
 import categoryRouters from "./routes/categoryRouters.js";
 import chatRoutes from './routes/chatRouters.js';
 import statsRouter from "./routes/statsRoutes.js";
+import invoiceRouter from "./routes/invoiceRoutes.js";
 connectDB();
 
 const app = express();
@@ -52,6 +53,7 @@ app.use("/api/promotions", promotionRouter);
 app.use("/api/categories", categoryRouters);
 app.use('/api/chat', chatRoutes);
 app.use("/api/stats", statsRouter);
+app.use('/api/invoices', invoiceRouter);
 
 // ─── 404 ────────────────────────────────────────────────────────
 app.use((req, res) => {
