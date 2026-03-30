@@ -13,6 +13,8 @@ import productRouter from "./routes/productRouters.js";
 import promotionRouter from "./routes/promotionRouters.js";
 import categoryRouters from "./routes/categoryRouters.js";
 import chatRoutes from './routes/chatRouters.js';
+import statsRouter from "./routes/statsRoutes.js";
+import invoiceRouter from "./routes/invoiceRoutes.js";
 import ordersUserRouter from "./routes/odersUserRouters.js";
 connectDB();
 
@@ -51,6 +53,8 @@ app.use("/api/products", productRouter);
 app.use("/api/promotions", promotionRouter);
 app.use("/api/categories", categoryRouters);
 app.use('/api/chat', chatRoutes);
+app.use("/api/stats", statsRouter);
+app.use('/api/invoices', invoiceRouter);
 app.use("/api/orders", ordersUserRouter);
 
 // ─── 404 ────────────────────────────────────────────────────────
