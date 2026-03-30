@@ -13,6 +13,7 @@ import productRouter from "./routes/productRouters.js";
 import promotionRouter from "./routes/promotionRouters.js";
 import categoryRouters from "./routes/categoryRouters.js";
 import chatRoutes from './routes/chatRouters.js';
+import ordersUserRouter from "./routes/odersUserRouters.js";
 connectDB();
 
 const app = express();
@@ -50,7 +51,7 @@ app.use("/api/products", productRouter);
 app.use("/api/promotions", promotionRouter);
 app.use("/api/categories", categoryRouters);
 app.use('/api/chat', chatRoutes);
-
+app.use("/api/orders", ordersUserRouter);
 
 // ─── 404 ────────────────────────────────────────────────────────
 app.use((req, res) => {
